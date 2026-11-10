@@ -2,81 +2,101 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0e14">
-<title>KK 園區 · 派遣版</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07090f">
+<title>KK 園區 · 生存街機</title>
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="map.css">
 </head>
 <body>
+<div id="app">
+  <canvas id="game"></canvas>
 
-<div class="wrap">
-
-  <header class="hud">
-    <div class="hud-left">
-      <div class="rank-title" id="rankTitle">待宰豬仔</div>
-      <div class="rank-sub" id="rankSub">Lv.0 · 日薪 250</div>
+  <!-- HUD -->
+  <header id="hud" class="hidden">
+    <div class="hud-row">
+      <div class="hud-timer" id="hudTimer">10:00</div>
+      <div class="hud-stats">
+        <span id="hudKills">💥 0</span>
+        <span id="hudGold">🪙 0</span>
+      </div>
+      <div class="hud-btns">
+        <button id="btnMute" aria-label="聲音">🔊</button>
+        <button id="btnPause" aria-label="暫停">⏸</button>
+      </div>
     </div>
-    <div class="hud-right">
-      <div class="money" id="money">0</div>
-      <div class="rate" id="rate">今日額度 24h</div>
+    <div class="hud-row hud-sub">
+      <div class="lv-badge" id="hudLevel">Lv.1</div>
+      <div class="xp-bar"><div class="xp-fill" id="xpFill"></div></div>
     </div>
+    <div class="hud-weapons" id="hudWeapons"></div>
   </header>
 
-  <section class="map-viewport" id="mapViewport">
-    <div class="map-world" id="mapWorld"></div>
-    <div class="map-vignette"></div>
-    <div class="dpad" id="dpad">
-      <button class="dbtn up"    data-dir="up"    aria-label="上">▲</button>
-      <button class="dbtn left"  data-dir="left"  aria-label="左">◀</button>
-      <button class="dbtn right" data-dir="right" aria-label="右">▶</button>
-      <button class="dbtn down"  data-dir="down"  aria-label="下">▼</button>
+  <!-- Boss 血條 -->
+  <div id="bossBar" class="hidden">
+    <div class="boss-name" id="bossName"></div>
+    <div class="boss-track"><div class="boss-fill" id="bossFill"></div></div>
+  </div>
+
+  <!-- 主選單 -->
+  <div id="menu" class="overlay">
+    <div class="menu-box">
+      <h1 class="logo">KK 園區<br><span>生存街機</span></h1>
+      <p class="tagline">黑粉大軍包圍了園區！走位閃避、武器自動開火，<br>撿寶石升級強化，撐過 <b>10 分鐘</b> 就是園區傳說。</p>
+      <button class="btn-big" id="btnStart">▶ 開始遊戲</button>
+      <div class="record" id="menuRecord"></div>
+      <div class="help">電腦：WASD／方向鍵移動，Esc 暫停<br>手機：按住螢幕拖動即搖桿</div>
     </div>
-    <button class="act-btn off" id="btnInteract">互動<small>Z</small></button>
-  </section>
-
-  <div class="stage-msg" id="stageMsg">正在載入紙娃娃…</div>
-
-  <div class="dbar hidden" id="dbar">
-    <div class="dbar-fill" id="dbarFill"></div>
-    <div class="dbar-text" id="dbarText"></div>
   </div>
 
-  <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="dispatch">派遣</button>
-    <button class="tab" data-tab="doll">紙娃娃</button>
-    <button class="tab" data-tab="gear">設備</button>
-    <button class="tab" data-tab="crew">人手</button>
-    <button class="tab" data-tab="promo">升職</button>
-  </nav>
-
-  <main class="panels">
-    <div class="panel active" id="panel-dispatch"></div>
-    <div class="panel" id="panel-doll"></div>
-    <div class="panel" id="panel-gear"></div>
-    <div class="panel" id="panel-crew"></div>
-    <div class="panel" id="panel-promo"></div>
-  </main>
-
-  <footer class="foot">
-    <button class="link" id="btnReset">重來</button>
-    <span class="ver">v0.5 地圖版 · 存檔在本機瀏覽器</span>
-  </footer>
-
-</div>
-
-<div class="toast-wrap" id="toastWrap"></div>
-
-<div class="modal hidden" id="modal">
-  <div class="modal-box">
-    <h2 id="modalTitle">歡迎回來</h2>
-    <p id="modalBody"></p>
-    <button class="btn-primary" id="modalOk">收下</button>
+  <!-- 升級三選一 -->
+  <div id="levelup" class="overlay hidden">
+    <div class="lvup-box">
+      <h2>⬆ 升級！選一個強化</h2>
+      <div class="cards" id="lvupCards"></div>
+    </div>
   </div>
+
+  <!-- 寶箱獎勵 -->
+  <div id="chest" class="overlay hidden">
+    <div class="chest-box">
+      <h2>🎁 黑料箱開啟！</h2>
+      <div class="chest-reward" id="chestReward"></div>
+      <button class="btn-big" id="btnChestOk">收下</button>
+    </div>
+  </div>
+
+  <!-- 暫停 -->
+  <div id="pausePanel" class="overlay hidden">
+    <div class="menu-box">
+      <h2>⏸ 暫停中</h2>
+      <div class="pause-build" id="pauseBuild"></div>
+      <button class="btn-big" id="btnResume">繼續</button>
+      <button class="btn-quit" id="btnQuit">放棄，回主選單</button>
+    </div>
+  </div>
+
+  <!-- 結束 -->
+  <div id="gameover" class="overlay hidden">
+    <div class="menu-box">
+      <h2 id="goTitle">💥 被黑粉淹沒了</h2>
+      <div class="go-stats" id="goStats"></div>
+      <div class="record" id="goRecord"></div>
+      <button class="btn-big" id="btnRetry">再來一場</button>
+      <button class="btn-quit" id="btnMenu">回主選單</button>
+    </div>
+  </div>
+
+  <!-- 傷害飛字容器（canvas 上層不擋點擊） -->
+  <div id="fxLayer"></div>
+
+  <!-- 虛擬搖桿 -->
+  <div id="joystick" class="hidden"><div id="joyKnob"></div></div>
 </div>
 
+<script src="sprites.js"></script>
+<script src="audio.js"></script>
 <script src="data.js"></script>
-<script src="map.js"></script>
+<script src="ui.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

@@ -1,203 +1,121 @@
-/* KK 園區 · 派遣版 — 靜態資料表
- *
- * 數值以 Discord 端 cogs/common/work_function/work_system.py 的 LEVELS 為錨：
- * Lv0「待宰豬仔」在 Bot 端一天約賺 362 KK幣，這裡的領錢 base(8h)=120、
- * 一天額度 24h → 120 × 3 = 360，兩邊對得起來。
- * 全滿等最高 大單詐騙 1600 × 1.88 × 3 = 9,024 / 天，壓在 10,000 以內。
- */
+'use strict';
+/* data.js — 平衡數值表：武器、被動、敵人、波次時間軸 */
 
-/* 七級職位。salary / days / xp 沿用 Bot 端原值，供升職面板顯示。 */
-const RANKS = [
-  { lv: 0, title: '待宰豬仔',       salary: 250,   days: 0,  xp: 0     },
-  { lv: 1, title: '基層狗推(車手)', salary: 1500,  days: 7,  xp: 500   },
-  { lv: 2, title: '一線聊手',       salary: 2750,  days: 14, xp: 1500  },
-  { lv: 3, title: '收水/車頭',      salary: 4500,  days: 28, xp: 4000  },
-  { lv: 4, title: '水房會計',       salary: 7500,  days: 42, xp: 8500  },
-  { lv: 5, title: '機房主任',       salary: 12500, days: 60, xp: 18000 },
-  { lv: 6, title: '小區代理人',     salary: 21000, days: 90, xp: 40000 },
-];
+const RUN_TIME = 600; // 一場 10 分鐘
 
-/* 業務。base = 派滿 8 小時的報酬，risk = 派遣結束時的失敗機率。
- * slot = 對應的紙娃娃部位，穿對部位會加乘這個業務。
- * prop = 派遣時紙娃娃會走到哪個場景物件前面。 */
-const JOBS = [
-  { id: 'lingqian',  name: '領錢',     lv: 0, base: 120,  risk: 0.10, slot: 'face',          prop: 'vault',  anim: 'alert'   },
-  { id: 'zhapian',   name: '詐騙',     lv: 1, base: 480,  risk: 0.35, slot: 'hat',           prop: 'phone',  anim: 'alert'   },
-  { id: 'tanpan',    name: '談判',     lv: 2, base: 400,  risk: 0.30, slot: 'hair',          prop: 'phone',  anim: 'alert'   },
-  { id: 'shoushui',  name: '收水',     lv: 3, base: 600,  risk: 0.20, slot: 'top',           prop: 'vault',  anim: 'swingO1' },
-  { id: 'zhuanyi',   name: '轉移陣地', lv: 3, base: 720,  risk: 0.25, slot: 'shoes',         prop: 'server', anim: 'walk1'   },
-  { id: 'xiqian',    name: '洗錢',     lv: 3, base: 1150, risk: 0.40, slot: 'bottom',        prop: 'server', anim: 'swingO1' },
-  { id: 'suanzhang', name: '算帳',     lv: 4, base: 950,  risk: 0.20, slot: 'top',           prop: 'desk',   anim: 'alert'   },
-  { id: 'touaqian',  name: '偷A錢',    lv: 4, base: 1050, risk: 0.30, slot: 'faceAccessory', prop: 'vault',  anim: 'swingO1' },
-  { id: 'zuojia',    name: '做假帳',   lv: 4, base: 1150, risk: 0.50, slot: 'bottom',        prop: 'desk',   anim: 'swingO1' },
-  { id: 'nuoyong',   name: '挪用公款', lv: 4, base: 1400, risk: 0.60, slot: 'faceAccessory', prop: 'vault',  anim: 'swingO1' },
-  { id: 'peixun',    name: '培訓新人', lv: 5, base: 1000, risk: 0.10, slot: 'face',          prop: 'desk',   anim: 'alert'   },
-  { id: 'wajue',     name: '挖虛擬幣', lv: 5, base: 1150, risk: 0.15, slot: 'shoes',         prop: 'server', anim: 'swingO1' },
-  { id: 'huashu',    name: '開發話術', lv: 5, base: 1150, risk: 0.25, slot: 'hair',          prop: 'desk',   anim: 'alert'   },
-  { id: 'dadan',     name: '大單詐騙', lv: 5, base: 1600, risk: 0.70, slot: 'hat',           prop: 'phone',  anim: 'alert'   },
-];
-
-/* ================= 派遣 ================= */
-
-/* 一天可派 24 小時，跨日（本機午夜）歸零。 */
-const DAILY_HOURS = 24;
-
-/* 可選時長（小時）。報酬按比例換算，所以派長派短每小時都一樣。 */
-const DURATIONS = [0.5, 2, 8];
-
-/* 報酬的基準時數：base 是「派滿 8 小時」的數字。 */
-const BASE_HOURS = 8;
-
-/* 派遣失敗時，只拿回這個比例。 */
-const FAIL_KEEP = 0.45;
-
-/* 派遣失敗的隨機事件，純文字描述。 */
-const EVENTS = [
-  { name: '臨檢',   text: '警察上門臨檢，這趟的錢先拿去疏通。' },
-  { name: '黑吃黑', text: '同業上門搶地盤，抽屜被搜走一批。' },
-  { name: '內鬼',   text: '底下的人手腳不乾淨，帳對不上。' },
-  { name: '跳電',   text: '機房跳電，整批業務停擺。' },
-  { name: '斷線',   text: '網路被切，客人跑光了。' },
-];
-
-/* ================= 紙娃娃 ================= */
-
-/* 七個部位。每個部位對應 JOBS 裡的 slot。 */
-const SLOTS = [
-  { id: 'face',          name: '臉型' },
-  { id: 'hair',          name: '髮型' },
-  { id: 'hat',           name: '帽子' },
-  { id: 'faceAccessory', name: '臉飾' },
-  { id: 'top',           name: '上衣' },
-  { id: 'bottom',        name: '褲子' },
-  { id: 'shoes',         name: '鞋子' },
-];
-
-/* 部位加成：三階，穿越高階加越多（只加乘對應的那個業務）。 */
-const TIER_BONUS = [0.03, 0.05, 0.08];
-
-/* 每階的售價（index 0 是第一階）。 */
-const TIER_COST = [300, 1500, 7000];
-
-/* 21 件單品，全部取自 twms_fashion_db.json 的真實道具 ID。 */
-const ITEMS = {
-  face: [
-    { id: 20000, name: '黑色挑戰的臉型' },
-    { id: 20005, name: '黑色乾淨的臉型' },
-    { id: 20009, name: '黑色很不屑臉型' },
-  ],
-  hair: [
-    { id: 30000, name: '黑色基本冒險造型' },
-    { id: 30005, name: '藍色基本冒險造型' },
-    { id: 30007, name: '棕色基本冒險造型' },
-  ],
-  hat: [
-    { id: 1000000, name: '藍色毛帽' },
-    { id: 1000004, name: '學生帽' },
-    { id: 1000006, name: '大和男性假髮' },
-  ],
-  faceAccessory: [
-    { id: 1010000, name: '褐色落腮鬍' },
-    { id: 1010002, name: '男生忍者口罩' },
-    { id: 1010003, name: '鬍渣痕跡' },
-  ],
-  top: [
-    { id: 1040001, name: '黑西裝' },
-    { id: 1040027, name: '中學生上衣' },
-    { id: 1040045, name: '紅色運動服' },
-  ],
-  bottom: [
-    { id: 1060001, name: '黑西褲' },
-    { id: 1060003, name: '軍用短褲' },
-    { id: 1060034, name: '藍摩托車褲' },
-  ],
-  shoes: [
-    { id: 1070001, name: '黑聖誕鞋' },
-    { id: 1070003, name: '地獄使者靴' },
-    { id: 1070007, name: '唐裝鞋' },
-  ],
-};
-
-/* 開局就穿在身上的「囚服」，讓新角色不是一顆空白頭。 */
-const START_OWNED = [20000, 30000, 1040001, 1060001, 1070001];
-
-/* ================= 加成 ================= */
-
-/* 設備：逐級解鎖，每階 +6%。 */
-const GEAR = [
-  { name: '二手手機',     cost: 120,   bonus: 0.06 },
-  { name: '中古電腦',     cost: 700,   bonus: 0.06 },
-  { name: '專用機房',     cost: 2500,  bonus: 0.06 },
-  { name: '雲端伺服器',   cost: 8000,  bonus: 0.06 },
-  { name: '私人數據中心', cost: 22000, bonus: 0.06 },
-];
-
-/* 人手：每多一人 +2%，最多 10 人。 */
-const CREW = { baseCost: 200, growth: 1.35, bonus: 0.02, max: 10 };
-
-/* 每升一階職位 +5%。 */
-const RANK_BONUS = 0.05;
-
-/* 升職門檻，對應 RANKS[1..6]。 */
-const PROMO_COST = [500, 2000, 6000, 16000, 40000, 80000];
-
-/* 自動派遣（掛機）的解鎖職位：升到「收水/車頭」代表底下開始有人替你跑腿。 */
-const AUTO_UNLOCK_RANK = 3;
-
-/* ================= maplestory.io ================= */
-
-/* 已實測可用的端點形狀：
- *   /api/TWMS/256/Character/animated/{skin}/{itemsCSV}/{anim}/0
- * skin 必須獨立成一段路徑，混進 itemsCSV 會 500。
- * animated 端點吃不到 resize，GIF 固定 39×66，放大交給 CSS。 */
-const API = {
-  base: 'https://maplestory.io/api/TWMS/256/Character',
-  skin: 12000,
-  body: 2000,
-  resize: 2,
-  idle: 'stand1',
-  walk: 'walk1',
-  done: 'jump',
-  fail: 'prone',
-};
-
-/* 要預先抓下來的動作，避免派遣當下才開始下載。 */
-const PRELOAD_ANIMS = ['stand1', 'walk1', 'alert', 'swingO1', 'jump', 'prone'];
-
-/* ================= 地圖（暗夜霓虹園區） =================
- *
- * 用字元網格畫地圖，一格 = tile(px)。
- *   #  磚牆（擋路）      .  柏油路      ,  泥土地
- *   ~  水窪（裝飾可走）  t  樹（擋路）  l  路燈（擋路）
- *   b  三角錐（擋路）
- *   P/V/S/D  派遣站外框左上角，各佔 3×2 格，整塊擋路。
- * 站點對應 JOBS.prop：D=desk 電腦桌、P=phone 電話、V=vault 金庫、S=server 機櫃。
- */
-const MAP = {
-  tile: 44,
-  grid: [
-    '##################',
-    '#t,,,,,,,,,,,,,tt#',
-    '#,,D,,,,,,,,P,,,,#',
-    '#,,,,,,,,,,,,,,,,#',
-    '#,l,.,,,,l,,,.,,l#',
-    '#................#',
-    '#...........~....#',
-    '#,,.l,,,,,,,.l,,,#',
-    '#,V,,,,,,,,S,,,,b#',
-    '#,,,,,,,,,,,,,bb,#',
-    '#t,,,,,,,,,,,,~,,#',
-    '##################',
-  ],
-
-  /* 站點外觀。id 對應 JOBS.prop；footprint 固定 3×2。neon 是招牌的霓虹色。 */
-  stations: {
-    desk:   { sign: '業務辦公室', emoji: '🖥️', neon: '#3fb950' },
-    phone:  { sign: '詐騙電話亭', emoji: '📞', neon: '#f851a9' },
-    vault:  { sign: '中央金庫',   emoji: '🔐', neon: '#f0b90b' },
-    server: { sign: '地下機房',   emoji: '🗄️', neon: '#38bdf8' },
+// ===== 武器（maxLv 5；滿級＋對應被動滿級 → 進化） =====
+const WEAPONS = {
+  dart: {
+    name: 'KK幣飛鏢',
+    icon: '🪙',
+    desc: '自動射擊最近的敵人',
+    evoName: '黃金發財鏢',
+    evoIcon: '🌟',
+    evoDesc: '追蹤導彈化，彈數+2、傷害翻倍',
+    evoWith: 'dmg', // 需「經紀人加持」滿級
+    lv: [
+      { cd: 0.9, dmg: 10, count: 1, spd: 380 },
+      { cd: 0.8, dmg: 12, count: 1, spd: 400 },
+      { cd: 0.7, dmg: 14, count: 2, spd: 420 },
+      { cd: 0.6, dmg: 16, count: 2, spd: 440 },
+      { cd: 0.5, dmg: 18, count: 3, spd: 460 },
+    ],
   },
-
-  /* 走動撿紅包：spawnChance 每 tick 檢查一次的機率，life 是留在地上的時間。 */
-  coin: { base: 8, perRank: 12, checkEvery: 4000, spawnChance: 0.045, life: 45000 },
+  glowstick: {
+    name: '應援螢光棒',
+    icon: '✨',
+    desc: '螢光棒繞著你旋轉，碰撞造成傷害',
+    evoName: '雙生霓虹棒',
+    evoIcon: '💫',
+    evoDesc: '棒數翻倍、變大、範圍更廣',
+    evoWith: 'speed', // 需「咖啡因汽水」滿級
+    lv: [
+      { dmg: 8, n: 1, r: 62, spd: 2.6, size: 1 },
+      { dmg: 10, n: 1, r: 70, spd: 2.8, size: 1 },
+      { dmg: 12, n: 2, r: 76, spd: 3.0, size: 1 },
+      { dmg: 15, n: 2, r: 84, spd: 3.2, size: 1.15 },
+      { dmg: 18, n: 3, r: 92, spd: 3.4, size: 1.25 },
+    ],
+  },
+  sonic: {
+    name: '音浪應援',
+    icon: '📢',
+    desc: '定期發出擴散音波，擊退敵人',
+    evoName: '共鳴風暴',
+    evoIcon: '🌀',
+    evoDesc: '音波更大更密、擊退力翻倍',
+    evoWith: 'cd', // 需「應援節奏」滿級
+    lv: [
+      { cd: 3.2, dmg: 14, r: 110, knock: 130 },
+      { cd: 2.9, dmg: 17, r: 125, knock: 150 },
+      { cd: 2.6, dmg: 20, r: 140, knock: 170 },
+      { cd: 2.3, dmg: 24, r: 155, knock: 190 },
+      { cd: 2.0, dmg: 28, r: 175, knock: 220 },
+    ],
+  },
+  laser: {
+    name: '追星雷射',
+    icon: '🔆',
+    desc: '對最近敵人射出貫穿光束',
+    evoName: '銀河雷射',
+    evoIcon: '🌠',
+    evoDesc: '雙光束、傷害大幅提升',
+    evoWith: 'xp', // 需「經紀人契約」滿級
+    lv: [
+      { cd: 1.6, dmg: 16, len: 340, w: 5 },
+      { cd: 1.45, dmg: 19, len: 360, w: 6 },
+      { cd: 1.3, dmg: 22, len: 380, w: 7 },
+      { cd: 1.15, dmg: 26, len: 410, w: 8 },
+      { cd: 1.0, dmg: 30, len: 440, w: 9 },
+    ],
+  },
 };
+
+// ===== 被動（maxLv 5） =====
+const PASSIVES = {
+  speed: { name: '咖啡因汽水', icon: '🥤', desc: '每級移動速度 +8%', max: 5 },
+  pickup: { name: '應援手幅', icon: '🎽', desc: '每級撿寶石半徑 +25%', max: 5 },
+  hp: { name: '應援制服', icon: '👕', desc: '每級最大 HP +20', max: 5 },
+  dmg: { name: '經紀人加持', icon: '📣', desc: '每級傷害 +10%', max: 5 },
+  cd: { name: '應援節奏', icon: '🥁', desc: '每級武器冷卻 -7%', max: 5 },
+  xp: { name: '經紀人契約', icon: '📝', desc: '每級獲得經驗 +10%', max: 5 },
+};
+
+// ===== 敵人 =====
+// sprite 對應 sprites.js；scale 為像素放大倍率
+const ENEMIES = {
+  fan: { sprite: 'fan', hp: 12, spd: 60, dmg: 8, xp: 1, scale: 3, radius: 14 },
+  bot: { sprite: 'bot', hp: 8, spd: 95, dmg: 6, xp: 1, scale: 3, radius: 14 },
+  troll: { sprite: 'troll', hp: 30, spd: 45, dmg: 12, xp: 2, scale: 3, radius: 16 },
+  elite: { sprite: 'truck', hp: 500, spd: 34, dmg: 20, xp: 15, scale: 4, radius: 30, elite: true },
+  boss1: { sprite: 'boss', hp: 1600, spd: 40, dmg: 25, xp: 60, scale: 5, radius: 52, boss: '灌水機器王' },
+  boss2: { sprite: 'boss', hp: 3800, spd: 48, dmg: 30, xp: 100, scale: 6, radius: 62, boss: '輿論風暴', tint: '#a06bff' },
+};
+
+// ===== 波次時間軸（隨時間增壓；elite 3 分起、boss 6/9 分） =====
+// pool: {敵人key: 權重}；interval 生成間隔(秒)；burst 每次生成隻數
+const WAVES = [
+  { t: 0, pool: { fan: 3, bot: 1 }, interval: 1.2, burst: 2 },
+  { t: 60, pool: { fan: 3, bot: 2 }, interval: 1.0, burst: 3 },
+  { t: 120, pool: { fan: 2, bot: 2, troll: 1 }, interval: 0.9, burst: 3 },
+  { t: 180, pool: { fan: 2, bot: 3, troll: 1 }, elite: true, interval: 0.8, burst: 4 },
+  { t: 240, pool: { bot: 3, troll: 2 }, elite: true, interval: 0.7, burst: 4 },
+  { t: 300, pool: { fan: 2, bot: 3, troll: 2 }, elite: true, interval: 0.55, burst: 5 },
+  { t: 360, pool: { bot: 2, troll: 3 }, elite: true, interval: 0.5, burst: 5 },
+  { t: 420, pool: { troll: 3, bot: 2 }, elite: true, interval: 0.42, burst: 6 },
+  { t: 480, pool: { troll: 4, bot: 2 }, elite: true, interval: 0.34, burst: 6 },
+  { t: 540, pool: { troll: 4, bot: 3 }, elite: true, interval: 0.28, burst: 7 },
+];
+const BOSS_TIMES = [
+  { t: 360, key: 'boss1' },
+  { t: 540, key: 'boss2' },
+];
+const MAX_ENEMIES = 260;
+
+// ===== 玩家基礎值 =====
+const PLAYER_BASE = { hp: 100, speed: 170, pickup: 60, iframes: 0.8 };
+
+// XP 曲線：升級所需經驗
+function nextXP(level) {
+  return Math.floor(6 + level * 4 + level * level * 0.6);
+}

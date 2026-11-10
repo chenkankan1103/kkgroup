@@ -1,601 +1,225 @@
-/* KK 園區 · 派遣版 — 樣式 */
+/* KK 園區 · 生存街機 — 霓虹像素風 */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 :root {
-  --bg: #0b0e14;
-  --card: #151a23;
-  --card2: #1c2230;
-  --line: #262d3a;
-  --gold: #f0b90b;
-  --green: #3fb950;
-  --red: #f85149;
-  --text: #e6edf3;
-  --dim: #8b949e;
-  --radius: 12px;
+  --bg: #07090f;
+  --panel: rgba(13, 17, 27, .94);
+  --cyan: #7df9ff;
+  --pink: #ff5ec4;
+  --gold: #ffe14d;
+  --purple: #a06bff;
+  --green: #3dff8f;
+  --red: #ff4d6d;
+  --text: #e8f0ff;
+  --dim: #8b97b0;
 }
 
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  padding: 0;
+html, body { height: 100%; overflow: hidden; }
+body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, -apple-system, sans-serif;
-  -webkit-text-size-adjust: 100%;
+  font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
+  user-select: none;
+  touch-action: none;
 }
-
-body {
-  min-height: 100vh;
-  padding: 12px 12px calc(24px + env(safe-area-inset-bottom));
-}
-
-button {
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
-  cursor: pointer;
-  border: none;
-  background: none;
-}
-
+#app { position: fixed; inset: 0; }
+#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hidden { display: none !important; }
 
-.wrap {
-  max-width: 520px;
-  margin: 0 auto;
+/* ===== HUD ===== */
+#hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 8px 10px 6px;
+  display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(7,9,15,.85), transparent);
+  z-index: 20;
+}
+.hud-row { display: flex; align-items: center; gap: 10px; }
+.hud-timer {
+  font-size: 26px; font-weight: 700; letter-spacing: 1px;
+  color: var(--cyan); text-shadow: 0 0 12px rgba(125,249,255,.6);
+  font-variant-numeric: tabular-nums; min-width: 92px;
+}
+.hud-stats { display: flex; gap: 12px; font-size: 14px; color: var(--dim); flex: 1; }
+.hud-btns { display: flex; gap: 6px; pointer-events: auto; }
+.hud-btns button {
+  width: 38px; height: 34px; font-size: 15px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid rgba(125,249,255,.35); border-radius: 8px;
+  cursor: pointer;
+}
+.hud-sub { gap: 8px; }
+.lv-badge {
+  font-size: 12px; font-weight: 700; padding: 2px 8px;
+  background: rgba(255,225,77,.15); border: 1px solid var(--gold);
+  color: var(--gold); border-radius: 10px; white-space: nowrap;
+}
+.xp-bar {
+  flex: 1; height: 10px; border-radius: 6px;
+  background: rgba(255,255,255,.08); overflow: hidden;
+  border: 1px solid rgba(160,107,255,.4);
+}
+.xp-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--purple), var(--pink));
+  transition: width .15s ease-out;
+}
+.hud-weapons { display: flex; gap: 5px; flex-wrap: wrap; }
+.wchip {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; padding: 2px 7px;
+  background: var(--panel); border-radius: 8px;
+  border: 1px solid rgba(125,249,255,.25); color: var(--dim);
+}
+.wchip b { color: var(--cyan); font-size: 10px; }
+.wchip.evo { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 8px rgba(255,225,77,.35); }
+
+/* ===== Boss 血條 ===== */
+#bossBar {
+  position: absolute; top: 84px; left: 50%; transform: translateX(-50%);
+  width: min(480px, 74vw); z-index: 20; text-align: center;
+}
+.boss-name {
+  font-size: 14px; font-weight: 700; color: var(--red);
+  text-shadow: 0 0 10px rgba(255,77,109,.7); margin-bottom: 4px;
+}
+.boss-track {
+  height: 12px; border-radius: 7px; background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,77,109,.5); overflow: hidden;
+}
+.boss-fill {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #ff4d6d, #ff9e4d);
+  transition: width .1s linear;
 }
 
-/* ================= HUD ================= */
-
-.hud {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+/* ===== Overlay 面板 ===== */
+.overlay {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(4, 6, 11, .82); backdrop-filter: blur(3px);
+  padding: 16px; overflow-y: auto;
 }
-
-.rank-title {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.rank-sub {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--dim);
-}
-
-.hud-right { text-align: right; }
-
-.money {
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.rate {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ================= 舞台下方訊息 ================= */
-
-.stage-msg {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--dim);
+.menu-box, .lvup-box, .chest-box {
+  background: var(--panel);
+  border: 2px solid rgba(125,249,255,.35);
+  border-radius: 16px; padding: 26px 24px;
+  max-width: 520px; width: 100%;
+  box-shadow: 0 0 40px rgba(125,249,255,.12), inset 0 0 30px rgba(125,249,255,.04);
   text-align: center;
-  min-height: 17px;
 }
-
-/* ================= 派遣進度條 ================= */
-
-.dbar {
-  position: relative;
-  height: 26px;
-  margin-top: 8px;
-  overflow: hidden;
-  background: var(--card2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+.logo {
+  font-size: 40px; line-height: 1.15; font-weight: 900; letter-spacing: 2px;
+  color: var(--cyan); text-shadow: 0 0 18px rgba(125,249,255,.55);
 }
-
-.dbar-fill {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 0;
-  background: linear-gradient(90deg, #a97f08, var(--gold));
-  transition: width 0.25s linear;
+.logo span { color: var(--pink); text-shadow: 0 0 18px rgba(255,94,196,.55); font-size: 34px; }
+.tagline { margin: 14px 0 20px; font-size: 14px; color: var(--dim); line-height: 1.7; }
+.tagline b { color: var(--gold); }
+.btn-big {
+  font-size: 18px; font-weight: 700; padding: 12px 34px;
+  color: #06121a; background: linear-gradient(135deg, var(--cyan), #4fd8e8);
+  border: 0; border-radius: 12px; cursor: pointer;
+  box-shadow: 0 0 22px rgba(125,249,255,.4);
+  font-family: inherit;
 }
-
-.dbar-text {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.8);
+.btn-big:active { transform: scale(.96); }
+.btn-quit {
+  display: block; margin: 12px auto 0; font-size: 13px;
+  color: var(--dim); background: none; border: none;
+  cursor: pointer; text-decoration: underline; font-family: inherit;
 }
+.record { margin-top: 14px; font-size: 13px; color: var(--gold); }
+.help { margin-top: 16px; font-size: 12px; color: var(--dim); line-height: 1.8; }
 
-/* ================= 分頁 ================= */
-
-.tabs {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  margin-top: 12px;
-  padding: 4px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+/* 升級卡片 */
+.lvup-box h2, .chest-box h2 { font-size: 22px; margin-bottom: 16px; color: var(--gold); }
+.cards { display: flex; flex-direction: column; gap: 10px; }
+.card {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  padding: 12px 14px; border-radius: 12px; cursor: pointer;
+  background: rgba(255,255,255,.045);
+  border: 2px solid rgba(125,249,255,.3);
+  transition: transform .08s, border-color .08s;
 }
-
-.tab {
-  padding: 9px 2px;
-  font-size: 12px;
-  color: var(--dim);
-  border-radius: 8px;
-  transition: background 0.15s, color 0.15s;
+.card:hover, .card:active { border-color: var(--cyan); transform: translateY(-2px); }
+.card .icon {
+  width: 44px; height: 44px; flex: 0 0 44px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; background: rgba(0,0,0,.35); border-radius: 10px;
 }
+.card .body { flex: 1; min-width: 0; }
+.card .name { font-size: 15px; font-weight: 700; color: var(--text); }
+.card .name .lv { color: var(--green); font-size: 12px; margin-left: 6px; }
+.card .name .lv.max { color: var(--gold); }
+.card .desc { font-size: 12px; color: var(--dim); margin-top: 3px; line-height: 1.5; }
+.card.weapon { border-color: rgba(255,94,196,.4); }
+.card.weapon:hover { border-color: var(--pink); }
+.card.passive { border-color: rgba(61,255,143,.35); }
+.card.passive:hover { border-color: var(--green); }
+.card.evo { border-color: var(--gold); box-shadow: 0 0 16px rgba(255,225,77,.25); }
 
-.tab.active {
-  background: var(--card2);
-  color: var(--gold);
-  font-weight: 700;
+/* 寶箱 */
+.chest-reward {
+  padding: 16px; margin: 8px 0 18px; border-radius: 12px;
+  background: rgba(255,225,77,.08); border: 1px dashed var(--gold);
+  font-size: 16px; font-weight: 700; color: var(--gold); line-height: 1.6;
 }
+.chest-reward small { display: block; font-weight: 400; color: var(--dim); font-size: 12px; margin-top: 6px; }
 
-.panel { display: none; margin-top: 12px; }
-.panel.active { display: block; }
+/* 暫停 build 一覽 */
+.pause-build { margin: 14px 0 20px; text-align: left; font-size: 13px; line-height: 2; color: var(--dim); }
+.pause-build b { color: var(--cyan); }
 
-/* ================= 通用列 ================= */
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 13px;
-  margin-bottom: 8px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+/* 結束統計 */
+.go-stats {
+  margin: 16px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  font-size: 14px; color: var(--dim);
 }
-
-.row.owned { opacity: 0.6; }
-
-.row-main { flex: 1; min-width: 0; }
-
-.row-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 600;
+.go-stats .stat {
+  padding: 10px; background: rgba(255,255,255,.05); border-radius: 10px;
 }
+.go-stats .stat b { display: block; font-size: 22px; color: var(--text); margin-bottom: 2px; }
+.go-stats .stat.win b { color: var(--gold); }
 
-.row-sub {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--dim);
-  line-height: 1.5;
-}
-
-.badge {
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--dim);
-  background: var(--card2);
-  border-radius: 20px;
+/* fx 飛字 */
+#fxLayer { position: absolute; inset: 0; pointer-events: none; z-index: 15; overflow: hidden; }
+.dmg-float {
+  position: absolute; font-size: 13px; font-weight: 700;
+  color: #fff; text-shadow: 0 0 6px rgba(0,0,0,.8);
+  animation: floatUp .7s ease-out forwards;
   white-space: nowrap;
 }
-
-.badge.ok {
-  color: var(--green);
-  background: rgba(63, 185, 80, 0.13);
+.dmg-float.crit { color: var(--gold); font-size: 16px; }
+.dmg-float.hurt { color: var(--red); font-size: 15px; }
+.dmg-float.xp { color: var(--purple); }
+@keyframes floatUp {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-34px); }
 }
 
-/* ================= 按鈕 ================= */
-
-.btn {
-  flex: none;
-  min-width: 68px;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--gold);
-  background: var(--card2);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  transition: transform 0.1s, opacity 0.15s, border-color 0.15s;
+/* 虛擬搖桿 */
+#joystick {
+  position: absolute; z-index: 30; width: 120px; height: 120px;
+  border-radius: 50%; border: 2px solid rgba(125,249,255,.35);
+  background: rgba(125,249,255,.07); pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+#joyKnob {
+  position: absolute; left: 50%; top: 50%; width: 52px; height: 52px;
+  border-radius: 50%; background: rgba(125,249,255,.45);
+  border: 2px solid var(--cyan);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 14px rgba(125,249,255,.5);
 }
 
-.btn:active { transform: scale(0.96); }
-.btn small { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; opacity: 0.72; }
-
-.btn.off,
-.btn[disabled] {
-  color: var(--dim);
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.btn.wide {
-  display: block;
-  width: 100%;
-  padding: 12px;
-  font-size: 14px;
-  color: #10141b;
-  background: var(--gold);
-  border-color: var(--gold);
-}
-
-.btn.wide.off { color: var(--dim); background: var(--card2); border-color: var(--line); }
-
-.link {
-  padding: 4px;
-  font-size: 11px;
-  color: var(--dim);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.link:hover { color: var(--text); }
-
-.skip {
-  display: block;
-  margin: 8px auto 0;
-  text-align: center;
-}
-
-/* ================= 派遣：業務清單 ================= */
-
-.stn-head {
-  margin: 14px 2px 6px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-shadow: 0 0 10px currentColor;
-}
-
-.stn-filter {
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: var(--dim);
-}
-
-.stn-filter .link { padding: 2px 4px; }
-
-.job {
-  padding: 11px 13px;
-  margin-bottom: 6px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.job.sel {
-  background: var(--card2);
-  border-color: var(--gold);
-}
-
-/* 還沒解鎖的業務：看得到、點不了，當作升職目標 */
-.job.off {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* ================= 自動派遣 ================= */
-
-.auto-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 11px 13px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.auto-info { flex: 1; min-width: 0; }
-
-.auto-info b {
-  display: block;
-  font-size: 13px;
-}
-
-.auto-info small {
-  display: block;
-  margin-top: 3px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--dim);
-}
-
-.auto-btn.on {
-  color: #10141b;
-  background: var(--gold);
-  border-color: var(--gold);
-}
-
-.gobar {
-  margin-top: 10px;
-  padding: 12px 13px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.gobar-info {
-  font-size: 12px;
-  color: var(--dim);
-  text-align: center;
-}
-
-.gobar-info b { color: var(--text); }
-
-.gobar-btns {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.gobar-btns .btn { width: 100%; min-width: 0; }
-
-/* ================= 派遣：進行中卡片 ================= */
-
-.dcard {
-  padding: 14px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.dcard.ready {
-  border-color: var(--gold);
-  animation: pulse 1.8s ease-in-out infinite;
-}
-
-.dcard-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dcard-name { font-size: 17px; font-weight: 700; }
-
-.dcard-sub {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.dcard-pay {
-  margin: 12px 0 14px;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
-}
-
-.dcard-pay small {
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--dim);
-}
-
-/* ================= 紙娃娃面板 ================= */
-
-.slot { margin-bottom: 14px; }
-
-.slot-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.slot-job {
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--dim);
-}
-
-.item-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-
-.item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 9px 6px;
-  text-align: left;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
-}
-
-.item-name {
-  font-size: 11px;
-  line-height: 1.35;
-  word-break: break-all;
-}
-
-.item-sub {
-  font-size: 10px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.item.has { border-color: #33405a; }
-.item.on { background: var(--card2); border-color: var(--gold); }
-.item.on .item-name { color: var(--gold); font-weight: 700; }
-.item.on .item-sub { color: var(--gold); opacity: 0.8; }
-.item.off { opacity: 0.45; }
-
-/* ================= 升職 ================= */
-
-.promo-top {
-  padding: 16px 14px;
-  margin-bottom: 12px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.promo-now {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 14px;
-  color: var(--dim);
-}
-
-.promo-now b { font-size: 17px; color: var(--gold); }
-.arrow { color: var(--dim); }
-
-.promo-title { font-size: 20px; font-weight: 700; color: var(--gold); }
-
-.promo-meta {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--dim);
-}
-
-.hint {
-  margin: 10px 2px 0;
-  font-size: 11px;
-  line-height: 1.7;
-  color: var(--dim);
-}
-
-/* ================= 頁尾 ================= */
-
-.foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.ver { font-size: 10px; color: var(--dim); }
-
-/* ================= Toast ================= */
-
-.toast-wrap {
-  position: fixed;
-  left: 50%;
-  bottom: 20px;
-  z-index: 90;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: min(460px, calc(100vw - 32px));
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.toast {
-  padding: 10px 13px;
-  font-size: 12px;
-  line-height: 1.5;
-  background: var(--card2);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--dim);
-  border-radius: 9px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
-  animation: slideIn 0.22s ease-out;
-}
-
-.toast.good { border-left-color: var(--green); }
-.toast.bad { border-left-color: var(--red); }
-.toast.out { opacity: 0; transition: opacity 0.5s; }
-
-/* ================= Modal ================= */
-
-.modal {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.65);
-}
-
-.modal-box {
-  width: 100%;
-  max-width: 340px;
-  padding: 22px;
-  text-align: center;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.modal-box h2 { margin: 0 0 10px; font-size: 18px; }
-.modal-box p { margin: 0 0 18px; font-size: 13px; line-height: 1.7; color: var(--dim); white-space: pre-line; }
-
-.btn-primary {
-  width: 100%;
-  padding: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #10141b;
-  background: var(--gold);
-  border-radius: 9px;
-}
-
-/* ================= 動畫 ================= */
-
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 185, 11, 0); }
-  50% { box-shadow: 0 0 0 4px rgba(240, 185, 11, 0.14); }
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* ================= 窄螢幕 ================= */
-
-@media (max-width: 380px) {
-  .money { font-size: 22px; }
-  .item-name { font-size: 10px; }
-  .tab { font-size: 11px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dcard.ready { animation: none; }
+/* 窄螢幕（手機） */
+@media (max-width: 640px) {
+  .hud-timer { font-size: 20px; min-width: 72px; }
+  .hud-stats { font-size: 12px; gap: 8px; }
+  .logo { font-size: 30px; }
+  .logo span { font-size: 25px; }
+  .menu-box, .lvup-box, .chest-box { padding: 20px 16px; }
+  .card .icon { width: 38px; height: 38px; flex-basis: 38px; font-size: 22px; }
+  #bossBar { top: 74px; }
 }
