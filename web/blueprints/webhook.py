@@ -43,8 +43,11 @@ PROJECT_DIR = Path("/home/e193752468/kkgroup")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 DISCORD_SYS_CHANNEL_ID = os.getenv("DISCORD_SYS_CHANNEL_ID", "")
-# 論壇式頻道：部署通知改發到這裡（每次通知開一篇貼文），不吵到一般頻道
+# 論壇式頻道：部署通知固定集中在同一篇貼文（thread ID 持久化到 .env，失效自動重開）
 DISCORD_FORUM_CHANNEL_ID = os.getenv("DISCORD_FORUM_CHANNEL_ID", "")
+DEPLOY_THREAD_ENV_KEY = "DISCORD_DEPLOY_THREAD_ID"
+DEPLOY_THREAD_NAME = "🪝 部署通知"
+ENV_FILE_ABS = Path(env_path).resolve()
 SYSTEMD_SERVICES = [
     "bot.service",
     "shopbot.service",
@@ -298,6 +301,31 @@ def send_discord_notification_thread(title, description, color, details=None):
         logger.error(f"❌ Discord 線程異常: {e}")
 
 
+def _load_deploy_thread_id():
+    """從 .env 重讀部署通知 thread ID。
+
+    Flask 是長駐進程，os.getenv 只在啟動時載入一次；
+    其他進程（log_monitor 等）也會寫 .env，故每次直接讀檔取得最新值。
+    """
+    try:
+        from dotenv import dotenv_values
+
+        val = dotenv_values(str(ENV_FILE_ABS)).get(DEPLOY_THREAD_ENV_KEY)
+        return int(val) if val else None
+    except Exception:
+        return None
+
+
+def _save_deploy_thread_id(thread_id):
+    """保存部署通知 thread ID 到 .env（與 status_dashboard / log_monitor 同一慣例）"""
+    try:
+        from dotenv import set_key
+
+        set_key(str(ENV_FILE_ABS), DEPLOY_THREAD_ENV_KEY, str(thread_id))
+    except Exception as e:
+        logger.error(f"保存部署通知 thread ID 失敗: {e}")
+
+
 async def _send_discord_embed(title, description, color, details=None):
     """
     異步發送 Discord embed
@@ -338,14 +366,39 @@ async def _send_discord_embed(title, description, color, details=None):
                 embed.set_footer(text="🪝 GitHub Webhook 自動部署")
                 # silent=True：靜音推播，訊息照樣進頻道——每次 push 都響一聲太吵
                 if isinstance(channel, discord.ForumChannel):
-                    # 論壇頻道不能直接 send，每次通知開一篇新貼文
-                    try:
-                        await channel.create_thread(
-                            name=title, embed=embed, silent=True
-                        )
-                    except TypeError:
-                        # 舊版 discord.py 的 create_thread 不支援 silent
-                        await channel.create_thread(name=title, embed=embed)
+                    # 論壇頻道不能直接 send；部署通知固定集中在同一篇貼文，
+                    # thread ID 存 .env，舊貼文被刪/發送失敗才自動重開一篇
+                    thread = None
+                    saved_thread_id = _load_deploy_thread_id()
+                    if saved_thread_id:
+                        thread = bot.get_channel(saved_thread_id)
+                        if thread is None:
+                            try:
+                                thread = await bot.fetch_channel(saved_thread_id)
+                            except Exception:
+                                thread = None
+                        if (
+                            thread is not None
+                            and isinstance(thread, discord.Thread)
+                            and thread.parent_id != channel.id
+                        ):
+                            thread = None
+                    if thread is not None:
+                        try:
+                            await thread.send(embed=embed, silent=True)
+                        except Exception:
+                            thread = None
+                    if thread is None:
+                        try:
+                            created = await channel.create_thread(
+                                name=DEPLOY_THREAD_NAME, embed=embed, silent=True
+                            )
+                        except TypeError:
+                            # 舊版 discord.py 的 create_thread 不支援 silent
+                            created = await channel.create_thread(
+                                name=DEPLOY_THREAD_NAME, embed=embed
+                            )
+                        _save_deploy_thread_id(created.thread.id)
                 else:
                     await channel.send(embed=embed, silent=True)
                 logger.info("✅ Discord 通知已發送")

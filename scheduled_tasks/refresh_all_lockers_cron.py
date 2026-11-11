@@ -5,9 +5,10 @@
 配置：0 3 * * 3 cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_all_lockers_cron.py
 
 流程：
-  cron 腳本用 Bot Token 透過 REST API 在論壇頻道開一篇「靜音」觸發貼文
-  （未設論壇頻道時退回系統/管理員等文字頻道）
-  → 線上 uibot 的 on_message 收到 → 執行 refresh_all_lockers()（觸發貼文保留）
+  cron 腳本用 Bot Token 透過 REST API 將「靜音」觸發訊息貼進論壇頻道的
+  固定同一篇觸發貼文（thread ID 存 .env 的 LOCKER_REFRESH_THREAD_ID，
+  貼文被刪才自動重開一篇）；未設論壇頻道時退回系統/管理員等文字頻道
+  → 線上 uibot 的 on_message 收到 → 執行 refresh_all_lockers()
 
 優點：
   - 不開第二條 Discord gateway 連線，不會踢到線上常駐 uibot
@@ -46,6 +47,32 @@ SUPPRESS_NOTIFICATIONS = 4096
 # 觸發訊息內容（必須與 uibot on_message 監聽的字串完全一致）
 TRIGGER_CONTENT = "定時任務觸發：批量刷新置物櫃"
 
+# 固定觸發貼文：論壇頻道內集中在同一篇 thread，thread ID 持久化到 .env
+LOCKER_THREAD_ENV_KEY = "LOCKER_REFRESH_THREAD_ID"
+LOCKER_THREAD_NAME = "批量刷新置物櫃"
+ENV_FILE = Path(__file__).parent.parent / ".env"
+
+
+def _load_saved_thread_id():
+    """從 .env 重讀上次建立的觸發貼文 thread ID（讀檔而非 getenv，避免快取）"""
+    try:
+        from dotenv import dotenv_values
+
+        val = dotenv_values(str(ENV_FILE)).get(LOCKER_THREAD_ENV_KEY)
+        return int(val) if val else None
+    except Exception:
+        return None
+
+
+def _save_thread_id(thread_id):
+    """保存觸發貼文 thread ID 到 .env（與 status_dashboard / log_monitor 同一慣例）"""
+    try:
+        from dotenv import set_key
+
+        set_key(str(ENV_FILE), LOCKER_THREAD_ENV_KEY, str(thread_id))
+    except Exception as e:
+        logger.error(f"保存觸發貼文 thread ID 失敗: {e}")
+
 
 def trigger_locker_refresh() -> bool:
     """以 Bot Token 透過 REST API 發送靜音觸發貼文/訊息到論壇（或文字）頻道，由線上 uibot 接手執行更新。"""
@@ -61,12 +88,34 @@ def trigger_locker_refresh() -> bool:
         "Content-Type": "application/json",
     }
 
-    # 優先發到論壇式頻道（每次觸發開一篇貼文，不吵人）
+    # 優先發到論壇式頻道（集中在同一篇觸發貼文，不吵人）
     forum_id = os.getenv("DISCORD_FORUM_CHANNEL_ID")
     if forum_id:
+        # 先試既有 thread：直接貼觸發訊息（進已歸檔貼文會自動重新開啟）
+        saved_thread_id = _load_saved_thread_id()
+        if saved_thread_id:
+            url = f"https://discord.com/api/v10/channels/{saved_thread_id}/messages"
+            payload = {
+                "content": TRIGGER_CONTENT,
+                "flags": SUPPRESS_NOTIFICATIONS,
+            }
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=10)
+                if response.status_code == 200:
+                    logger.info(
+                        f"✅ 靜音觸發訊息已貼進既有 thread (thread_id={saved_thread_id})，uibot 將接手執行置物櫃更新"
+                    )
+                    return True
+                logger.warning(
+                    f"⚠️ 既有 thread {saved_thread_id} 發送失敗：HTTP {response.status_code}，重開一篇觸發貼文..."
+                )
+            except Exception as e:
+                logger.error(f"❌ 既有 thread 發送異常：{e}，重開一篇觸發貼文...")
+
+        # 沒有既有 thread 或發送失敗：開新貼文並記住 ID，之後都貼同一篇
         url = f"https://discord.com/api/v10/channels/{forum_id}/threads"
         payload = {
-            "name": "批量刷新置物櫃（定時任務）",
+            "name": LOCKER_THREAD_NAME,
             "message": {
                 "content": TRIGGER_CONTENT,
                 "flags": SUPPRESS_NOTIFICATIONS,
@@ -77,8 +126,9 @@ def trigger_locker_refresh() -> bool:
             # 建立 thread 成功回傳 201（偶有 200）
             if response.status_code in (200, 201):
                 data = response.json()
+                _save_thread_id(data.get("id"))
                 logger.info(
-                    f"✅ 靜音觸發貼文已建立於論壇頻道 (thread_id={data.get('id')})，uibot 將接手執行置物櫃更新"
+                    f"✅ 靜音觸發貼文已建立於論壇頻道 (thread_id={data.get('id')})，之後每次觸發都貼同一篇，uibot 將接手執行置物櫃更新"
                 )
                 return True
             logger.warning(
