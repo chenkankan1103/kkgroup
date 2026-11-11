@@ -37,6 +37,7 @@ const UI = (() => {
     $('btnStartNew').onclick = () => { Sim.newGame(); enterGame(); };
     $('btnContinue').onclick = () => { if (!Sim.load()) Sim.newGame(); enterGame(); };
     $('btnShop').onclick = () => { $('shop').classList.toggle('hidden'); renderShop(); };
+    $('hudBury').onclick = () => Sim.buryCash();  // V2.5：風聲期間藏錢
     $('btnShopClose').onclick = () => $('shop').classList.add('hidden');
     $('btnMisClose').onclick = () => $('misPanel').classList.add('hidden');
     $('btnHelp').onclick = showHow;
@@ -86,6 +87,28 @@ const UI = (() => {
     GameMap.renderJobs(S.jobs, S.members);
     // V2：風聲預警 chip（發動後由攻堅卡接手）
     $('hudRaid').classList.toggle('hidden', !(S.raid && S.raid.phase === 'warn'));
+    // V2.5：藏錢 chip（風聲期間可藏一半現金防抄；藏了顯示凍結額度）
+    const bury = $('hudBury');
+    if (S.buried) {
+      bury.classList.remove('hidden');
+      bury.textContent = `🪙 已藏 $${S.buried.toLocaleString()}（天亮取回）`;
+      bury.disabled = true;
+    } else if (S.raid && S.raid.phase === 'warn') {
+      bury.classList.remove('hidden');
+      bury.textContent = '🪙 藏一半現金（防抄）';
+      bury.disabled = false;
+    } else {
+      bury.classList.add('hidden');
+    }
+    // V2.5：貢金 chip（18:00–21:00；錢不夠就紅閃）
+    const trib = $('hudTribute');
+    const tShow = S.day >= TRIBUTE.FROM_DAY && S.min >= TRIBUTE.WARN_MIN && S.min < TRIBUTE.AT_MIN;
+    trib.classList.toggle('hidden', !tShow);
+    if (tShow) {
+      const c = Sim.tributeCost();
+      trib.textContent = '🏹 貢金 $' + c.toLocaleString();
+      trib.classList.toggle('low', S.money < c);
+    }
     tickBuildProgress();
     tickRoster();
   }
@@ -191,6 +214,8 @@ const UI = (() => {
         <div>⏱ 時長 <b>${fmtDur(m.durMin)}</b></div>
         <div>🚨 風險 <b class="risk">${'★'.repeat(1 + Math.round(m.risk * 4))}</b></div>
         <div>🔥 熱度 <b>${m.heat > 0.75 ? '高' : m.heat > 0.45 ? '中' : '低'}</b></div>
+        <div>🛵 距離 <b>${m.distTier || '中'}</b>（遠＝錢多）</div>
+        <div>⏳ 時限 <b>${m.expireMin ? Math.max(0, Math.round(m.expireMin - Sim.gameMin())) + ' 分' : '不限'}</b></div>
       </div>
       <div class="mode-row">
         <button class="mode ${curMode === 'short' ? 'on' : ''}" data-mode="short">⚡ 快跑<small>開著看戲 · 會跳事件</small></button>
@@ -298,11 +323,15 @@ const UI = (() => {
     $('raidIntel').innerHTML =
       `<div>🚨 突擊強度評估：<b class="risk">${lv}（${st}）</b></div>` +
       `<div>🧍 在園區成員：<b>${home} 人</b>${home ? '' : '——沒人在，只能靠設施撐'}（出勤中的躲過這劫）</div>` +
-      `<div>${S.buildings.fence ? '🚧 圍籬已就位：強度被壓低過' : '🚧 沒有圍籬：強度完整，考慮花錢消災'}</div>`;
+      `<div>${S.buildings.fence ? '🚧 圍籬已就位：強度被壓低過' : '🚧 沒有圍籬：強度完整，考慮花錢消災'}</div>` +
+      (!S.raidCount ? '<div>👀 第一次突擊只是試探規模——撐住就懂節奏了</div>' : '');
     $('raidPlans').innerHTML = RAID_PLANS.map((p) => {
-      const off = (p.id === 'car' && !S.gear.car) || (p.id === 'bribe' && S.money < RAID.BRIBE_PRICE);
+      const bribeCost = p.id === 'bribe' ? Sim.raidBribeCost() : 0;
+      const off = (p.id === 'car' && !S.gear.car) || (p.id === 'bribe' && S.money < bribeCost);
+      const desc = p.id === 'bribe'
+        ? `付 $${bribeCost.toLocaleString()} 擺平，今晚必定平安（越用越貴）` : p.desc;
       return `<button class="ev-btn plan" data-plan="${p.id}"${off ? ' disabled' : ''}>` +
-        `${p.icon} ${p.name}<small>${off ? '（條件不符）' : p.desc}</small></button>`;
+        `${p.icon} ${p.name}<small>${off ? '（條件不符）' : desc}</small></button>`;
     }).join('');
     $('raidPlans').querySelectorAll('[data-plan]').forEach((b) => {
       b.onclick = () => {
@@ -321,7 +350,7 @@ const UI = (() => {
     const planName = (RAID_PLANS.find((p) => p.id === r.plan) || {}).name || '';
     const lines = [];
     if (r.plan === 'bribe') {
-      lines.push(`💸 付了 $${RAID.BRIBE_PRICE.toLocaleString()} 擺平，突擊臨時取消`);
+      lines.push(`💸 付了 $${(r.bribeCost || RAID.BRIBE_PRICE).toLocaleString()} 擺平，突擊臨時取消`);
     } else {
       lines.push(`${r.win ? '🛡️' : '💥'} ${planName}——防禦 ${r.def} vs 突擊 ${r.strength}`);
       if (r.carLost) lines.push('🏎️ 贓車被拖走了（商店可再買）');

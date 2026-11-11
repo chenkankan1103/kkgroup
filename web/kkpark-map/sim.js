@@ -44,6 +44,7 @@ const Sim = (() => {
       food: START_FOOD, buildings: {}, buildQueue: [],
       gear: {}, members: [], nextId: 1, missions: [], nextMid: 1,
       jobs: {}, nextGen: 0, ended: null,
+      buried: 0, buriedRefund: 0, raidCount: 0, bribeCount: 0,  // V2.5
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
     for (let i = 0; i < START.missions; i++) genMission();
@@ -57,14 +58,21 @@ const Sim = (() => {
     for (const x of MISSION_POOL) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
     const t = MISSION_TYPES[tk];
     const heat = 0.35 + Math.random() * 0.65;
+    const lat = Math.min(TW.latR[1], Math.max(TW.latR[0], c.lat + (Math.random() - 0.5) * 0.07));
+    const lng = Math.min(TW.lngR[1], Math.max(TW.lngR[0], c.lng + (Math.random() - 0.5) * 0.09));
+    // V2.5：距離參與決策——遠的錢多、風險也高，近的快但薄
+    // 生成範圍 lat ±0.035 / lng ±0.045（最大 dist ≈ 0.057），門檻與倍率對齊這個範圍
+    const dist = Math.hypot(lng - HQ.lng, lat - HQ.lat);
+    const distMult = 0.85 + Math.min(1, dist / 0.055) * 0.55;
     const m = {
       id: 'j' + (S.nextMid++), type: tk,
-      lat: Math.min(TW.latR[1], Math.max(TW.latR[0], c.lat + (Math.random() - 0.5) * 0.07)),
-      lng: Math.min(TW.lngR[1], Math.max(TW.lngR[0], c.lng + (Math.random() - 0.5) * 0.09)),
-      pay: rndInt(t.pay[0], t.pay[1]),
+      lat, lng,
+      pay: Math.round(rndInt(t.pay[0], t.pay[1]) * distMult),
       durMin: rndInt(t.dur[0], t.dur[1]),
-      risk: Math.min(0.9, t.risk * (0.6 + heat * 0.8)),
+      risk: Math.min(0.9, t.risk * (0.6 + heat * 0.8) + dist * 1.4),
       heat,
+      distTier: dist < 0.02 ? '近' : dist < 0.04 ? '中' : '遠',
+      expireMin: gameMin() + rndInt(MISSION_TTL[0], MISSION_TTL[1]),
       code: String.fromCharCode(65 + ((Math.random() * 26) | 0)) + (100 + ((Math.random() * 900) | 0)),
     };
     S.missions.push(m);
@@ -235,6 +243,20 @@ const Sim = (() => {
       S.trust = clamp100(S.trust - 8);   // 丟包，組織不爽
       addSus(-3);                        // 但低調撤退，懷疑小降
       emit('toast', { icon: '🤐', text: `${mem ? mem.name : '成員'} 丟包撤退，組織眉頭皺了一下` });
+    } else if (c.kind === 'police') {  // V2.5：餵情報的臨場抉擇
+      S.police = clamp100(S.police + (c.police || 0));
+      S.trust = clamp100(S.trust + (c.trust || 0));
+      emit('toast', { icon: '🕵️', text: `情報交出去了——警方進度 +${c.police}，組織信任 ${c.trust}` });
+    } else if (c.kind === 'pay') {     // V2.5：花錢／立威型抉擇
+      if (S.money >= (c.cost || 0)) {
+        S.money -= (c.cost || 0);
+        S.trust = clamp100(S.trust + (c.trust || 0));
+        if (c.sus) addSus(c.sus);
+        emit('toast', { icon: '🤝', text: c.cost ? `花了 $${c.cost.toLocaleString()} 擺平，氣氛維持住了` : '立威成功，但大家心裡都有數了' });
+      } else {
+        S.trust = clamp100(S.trust - 5);
+        emit('toast', { icon: '💸', text: '錢不夠擺平——場面有點難看（信任 -5）' });
+      }
     } else { // risk
       let p = 0.40 + mem[c.stat] * 0.05;
       if (S.gear.voice) p += 0.05;
@@ -304,6 +326,39 @@ const Sim = (() => {
     if (S.min === RAID.WARN_MIN) rollRaid();
     if (S.min === RAID.HIT_MIN && S.raid && S.raid.phase === 'warn') startRaid();
 
+    // V2.5：任務時效——過期的標記自動熄掉
+    let expired = false;
+    for (let i = S.missions.length - 1; i >= 0; i--) {
+      if (S.missions[i].expireMin && gm >= S.missions[i].expireMin) { S.missions.splice(i, 1); expired = true; }
+    }
+    if (expired) emit('missions');
+
+    // V2.5：藏錢天亮挖回（磨損一成）
+    if (S.buried && gm >= S.buriedRefund) {
+      const back = Math.round(S.buried * (1 - BURY_FEE));
+      S.money += back; S.buried = 0; S.buriedRefund = 0;
+      emit('toast', { icon: '🪙', text: `挖開地板——藏的錢回來了（+${back.toLocaleString()}）` });
+    }
+
+    // V2.5：貢金——18:00 預告、21:00 收（錢的長期出口）
+    if (S.day >= TRIBUTE.FROM_DAY) {
+      if (S.min === TRIBUTE.WARN_MIN) {
+        emit('toast', { icon: '🏹', text: `今晚 21:00 上頭要收貢金 $${tributeCost().toLocaleString()}——帳上不夠就等著被教訓` });
+      } else if (S.min === TRIBUTE.AT_MIN) {
+        const cost = tributeCost();
+        if (S.money >= cost) {
+          S.money -= cost;
+          S.trust = clamp100(S.trust + TRIBUTE.PAID_TRUST);
+          emit('toast', { icon: '🏹', text: `上繳貢金 $${cost.toLocaleString()}，上頭滿意（信任 +${TRIBUTE.PAID_TRUST}）` });
+        } else {
+          S.money = 0;
+          S.trust = clamp100(S.trust - TRIBUTE.SHORT_TRUST);
+          emit('toast', { icon: '😤', text: `貢金繳不出來——老闆的電話罵了整整一分鐘（信任 -${TRIBUTE.SHORT_TRUST}）` });
+        }
+        after();
+      }
+    }
+
     for (const mem of S.members) {
       if (mem.state === 'jail' && Date.now() >= mem.jailUntil) {
         mem.state = 'idle'; mem.jailUntil = 0;
@@ -341,7 +396,33 @@ const Sim = (() => {
     let s = RAID.STRENGTH_BASE + S.day * RAID.STRENGTH_DAY
       + S.sus * RAID.STRENGTH_SUS + S.police * RAID.STRENGTH_POLICE;
     if (S.buildings.fence) s *= RAID.FENCE_CUT;
+    if (!S.raidCount) s *= RAID_FIRST_RELIEF;  // 第一次只是試探規模，打六折
+    s *= 0.9 + Math.random() * 0.25;           // 每晚浮動 0.9~1.15×，不吃老本
     return Math.round(s);
+  }
+
+  // 花錢消災的當前價（越用越貴）
+  function raidBribeCost() {
+    return Math.min(RAID.BRIBE_CAP, RAID.BRIBE_PRICE + (S.bribeCount || 0) * RAID.BRIBE_STEP);
+  }
+
+  // ===== V2.5：藏錢（風聲期間把一半現金藏進地板，防被抄） =====
+  function buryCash() {
+    if (!S || S.ended || S.buried) return false;
+    if (!S.raid || S.raid.phase !== 'warn') return false;
+    const amt = Math.floor(S.money / 2);
+    if (amt < 500) { emit('toast', { icon: '🪙', text: '帳上錢太少，不用藏' }); return false; }
+    S.money -= amt;                                // 藏的當下就離帳——被抄/貢金都碰不到
+    S.buried = amt;
+    S.buriedRefund = (S.day + 1) * 1440 + 8 * 60;  // 隔天 08:00 挖回
+    after();
+    emit('toast', { icon: '🪙', text: `把 $${amt.toLocaleString()} 藏進地板（天亮取回、磨損一成）` });
+    return true;
+  }
+
+  // ===== V2.5：貢金額度（隨天數成長） =====
+  function tributeCost() {
+    return Math.min(TRIBUTE.CAP, TRIBUTE.BASE + Math.max(0, S.day - TRIBUTE.FROM_DAY) * TRIBUTE.PER_DAY);
   }
 
   function rollRaid() {
@@ -373,8 +454,10 @@ const Sim = (() => {
     const r = { plan: planId, win: false, strength: raid.strength, def: 0, seized: 0, caught: [], broken: null, trust: 0, sus: 0 };
 
     if (planId === 'bribe') {
-      S.money -= RAID.BRIBE_PRICE;
-      r.win = true; r.sus = -5;
+      const cost = raidBribeCost();
+      S.money -= cost;
+      S.bribeCount = (S.bribeCount || 0) + 1;
+      r.win = true; r.sus = -5; r.bribeCost = cost;
     } else {
       let def, edge;
       if (planId === 'car') {
@@ -430,6 +513,7 @@ const Sim = (() => {
     S.trust = clamp100(S.trust + r.trust);
     S.sus = clamp100(S.sus + r.sus);
     S.lastRaidDay = S.day;
+    S.raidCount = (S.raidCount || 0) + 1;
     S.raid = null;
     paused = false;
     after();
@@ -457,6 +541,11 @@ const Sim = (() => {
     if (!S.buildQueue) S.buildQueue = [];
     if (S.raid === undefined) S.raid = null;       // V2 攻堅欄位
     if (!S.lastRaidDay) S.lastRaidDay = 0;
+    if (!S.buried) S.buried = 0;                   // V2.5 欄位
+    if (!S.buriedRefund) S.buriedRefund = 0;
+    if (!S.raidCount) S.raidCount = 0;
+    if (!S.bribeCount) S.bribeCount = 0;
+    for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
     if (S.raid && S.raid.phase === 'fight') paused = true;
@@ -557,7 +646,7 @@ const Sim = (() => {
   return {
     on, newGame, load, restart, tick,
     assign, chooseEvent, bail, hire, buyGear, buyIntel, genMission, resolveRaid,
-    build, buyFood, memberCap,
+    build, buyFood, memberCap, buryCash, tributeCost, raidBribeCost,
     memberById, bailCost,
     state: () => S,
     isPaused: () => paused,

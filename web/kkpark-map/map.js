@@ -91,6 +91,7 @@ const GameMap = (() => {
           if (hash3(cx, cy, 7 + k) < dens * 0.45) {
             const lat2 = (cy + hash3(cx, cy * 3 + k, 11)) * CELL;
             const lng2 = (cx + hash3(cx * 3 + k, cy, 23)) * CELL;
+            if (!isFinite(lat2) || !isFinite(lng2)) continue;  // 動畫邊界狀態下 bounds 可能短暫失準
             L.marker([lat2, lng2], { icon: divIcon('🚔', [20, 20], 'cop-icon'), interactive: false }).addTo(mPolice);
             n++;
           }

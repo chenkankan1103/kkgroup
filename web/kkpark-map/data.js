@@ -71,6 +71,18 @@ const EVENTS = [
     A: { label: '換裝硬著頭皮上', kind: 'risk', stat: 'legs' },
     B: { label: '棄單保平安', kind: 'abandon' },
   },
+  {
+    icon: '🕵️', title: '線人密會',
+    text: '接頭的刑警在巷口閃兩下大燈，想現在收資料。但這時候離開視線，園區那邊會起疑……',
+    A: { label: '冒險赴約交情報', kind: 'police', police: 6, trust: -4 },
+    B: { label: '假裝沒看到', kind: 'continue' },
+  },
+  {
+    icon: '🍺', title: '自己人鬧酒',
+    text: '喝茫的成員在出租屋裡大聲嚷嚷，隔壁就是民宅，快壓不住場面了……',
+    A: { label: '花 $3,000 擺平安撫', kind: 'pay', cost: 3000, trust: 3 },
+    B: { label: '狠罵一頓立威', kind: 'pay', cost: 0, trust: -5, sus: 2 },
+  },
 ];
 
 // ===== 裝備（買一次永久生效）=====
@@ -116,7 +128,8 @@ const RAID = {
   STRENGTH_BASE: 40, STRENGTH_DAY: 2,           // 強度 = 40 + 天數×2 + 懷疑×0.25 + 進度×0.3
   STRENGTH_SUS: 0.25, STRENGTH_POLICE: 0.3,
   FENCE_CUT: 0.8,     // 圍籬讓突擊強度 -20%（加上原本夜間巡邏 -25%）
-  BRIBE_PRICE: 20000, // 花錢消災
+  BRIBE_PRICE: 20000, // 花錢消災起價（越用越貴）
+  BRIBE_STEP: 10000, BRIBE_CAP: 50000,
   SEIZE_PCT: 0.25, SEIZE_CAP: 30000,            // 迎戰敗北被抄現金（躲藏/棄車更輕）
 };
 // 策略卡選項（判定在 sim.resolveRaid）
@@ -126,6 +139,16 @@ const RAID_PLANS = [
   { id: 'car', icon: '🏎️', name: '棄車誘敵', desc: '犧牲贓車引開突擊隊（需要贓車）' },
   { id: 'bribe', icon: '💸', name: '花錢消災', desc: '付 $20,000 擺平，今晚必定平安' },
 ];
+
+// ===== V2.5：好玩度——藏錢、貢金、任務時效與距離 =====
+const BURY_FEE = 0.10;                 // 藏錢磨損一成（風聲期間藏一半現金，天亮取回）
+const TRIBUTE = {                      // 每天晚上上頭抽成——錢的長期出口
+  FROM_DAY: 3, WARN_MIN: 18 * 60, AT_MIN: 21 * 60,
+  BASE: 6000, PER_DAY: 2500, CAP: 45000,
+  PAID_TRUST: 2, SHORT_TRUST: 12,      // 繳得夠微加信任；繳不出來重罰
+};
+const MISSION_TTL = [360, 720];        // 任務時效（遊戲分鐘＝真實秒）6~12 小時，過期熄掉
+const RAID_FIRST_RELIEF = 0.6;         // 第一次突擊是試探規模，強度打六折
 
 const START = { money: 60000, trust: 60, police: 0, sus: 0, members: 2, missions: 4 };
 const JAIL_MIN = [3, 8]; // 看守所真實分鐘範圍

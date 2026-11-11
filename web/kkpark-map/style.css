@@ -301,6 +301,16 @@ button.pick:hover { border-color: var(--pink); }
 /* ===== V2 夜間攻堅 ===== */
 #hudRaid { color: var(--red); border-color: var(--red); animation: foodBlink 1.1s ease-in-out infinite; }
 
+/* ===== V2.5：藏錢／貢金 chip ===== */
+#hudBury {
+  pointer-events: auto; cursor: pointer;
+  color: var(--gold); border-color: rgba(255, 225, 77, 0.5);
+}
+#hudBury:hover:not(:disabled) { border-color: var(--gold); }
+#hudBury:disabled { opacity: 0.6; cursor: default; color: var(--dim); }
+#hudTribute { color: var(--gold); }
+#hudTribute.low { color: var(--red); border-color: var(--red); animation: foodBlink 1.1s ease-in-out infinite; }
+
 /* 攻堅卡的 overlay 較透——讓底下警車集結的畫面看得到 */
 .overlay.raid { background: rgba(5, 7, 12, 0.5); backdrop-filter: blur(1.5px); }
 
