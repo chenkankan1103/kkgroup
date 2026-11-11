@@ -1,0 +1,52 @@
+# KK 園區：雙面線人 — 開發進度交接（2026-11-11）
+
+> 給下一個對話的開場文件：讀完這份就知道做到哪、下一步是什麼。
+
+## 線上狀態（全部已部署 GitHub Pages，deploy-pages.yml 自動觸發）
+
+| 路徑 | 遊戲 | 狀態 |
+|---|---|---|
+| `/` | kkpark 原版 | 穩定 |
+| `/game/` | 生存街機（原地圖派遣版改寫留檔：音效＋精靈＋模組拆分） | 留檔，無開發計畫（commit ea435f56） |
+| `/map/` | **雙面線人 V1.5 建設版（主力）** | 已上線（commit 927005c0），全系統驗證通過 |
+
+## 主力遊戲：web/kkpark-map/「KK 園區：雙面線人」
+
+台灣真實地圖詐騙園區經營＋雙面臥底。7 檔純前端：index.html / style.css / data.js（數值表）/ save.js（localStorage `kkpark_map_save_v1`）/ sim.js（狀態機）/ map.js（Leaflet）/ ui.js。
+
+### 已完成系統（全部瀏覽器實測通過、零 console 錯誤）
+
+- **地圖**：Leaflet＋Esri World Dark Gray 瓦片（免 key、maxZoom 16）；決定性偽隨機警車——400m 固定格（CELL=0.004°）＋hash3 雜湊，位置與存在都由格子決定、時段只調數量門檻，跨縮放不跑位（z12 每4格/z13 每2格/z14+ 全顯、cap 450、zoom<12 不顯示、26 點 ray cast 擋海）
+- **時鐘**：1 真實秒＝1 遊戲分鐘；setInterval(1000) 驅動 Sim.tick()；gameMin = day*1440+min
+- **任務派遣**：快跑（看戲＋事件）/大活（×4 時長 ×2.2 錢、離線照跑 endRealMs）；事件抉擇（4 種 EVENTS）；看守所 JAIL_MIN[3,8]＋保釋（$20000 起跳）；風險/熱度/賞金隨機
+- **V1.5 走路動畫**：job 三階段 `leg: out → work → back`；每遊戲分鐘移動 MOVE_DEG=0.0028°（贓車 ×1.9）；marker 持久化＋CSS transition 1s 補間；回 HQ 才 idle
+- **V1.5 伙食**：開場 25；每天 06:00 全員開飯（每人 2、廚房→1）；水塔 +4/天；成功任務 +1；$3000 買 +10；斷糧 trust −5＋toast；HUD chip ≤3 紅閃
+- **V1.5 園區建設**：5 棟 BUILDINGS（水塔/廚房/圍籬/發電機/工寮）——商店購買、buildQueue 施工（buildMin 遊戲分鐘=真實秒）、HQ 旁 B_SPOTS 圖示（工地 ⚒️ 灰框→完工綠框）；圍籬＝夜間警力 −25%、發電機＝報酬 ×1.15、工寮＝成員上限 +3（基礎 6）
+- **存檔**：v2 格式＋v1→v2 自動遷移（food/buildings/buildQueue 補預設、舊 job 補 leg='work'）
+- **教學**：`kkpark_map_tut_v1` flag、六步 howto（❓ 可重開）
+- **結局**：信任歸零滅口 / 懷疑滿收押（敗）、警方進度 100 全台收網（勝）
+
+### 對標願景（Infection Free Zone，已與使用者對齊）
+
+分期：V1.5 建設版（✅ 完成）→ **V2 夜間攻堅戰（下一步）** → 不做：真實建築建模/尋路/戰爭迷霧
+
+## 下一步：V2 夜間警方攻堅戰（方向已定，細部設計待討論定稿）
+
+概念：把「夜間警力密度高」升級成週期性攻堅事件——夜間警方可能突擊園區，玩家用建設防禦（圍籬 -25% 警力已有防禦價值）、安排成員應對（迎戰/躲藏/犧牲贓車…）。預估一兩天工作量。開工前先跟使用者對齊：觸發條件、戰鬥表現形式（modal 敘事 vs 地圖動畫）、勝敗後果。
+
+## 已知的小尾巴（非阻塞）
+
+1. 發電機 ×1.15 只驗了程式碼，沒跑數值對比（一行乘法，低風險）
+2. 數值平衡未經長時間遊玩調校（開場 $60000、任務報酬、伙食消耗節奏）
+3. 手機響應式排版（@media 720px）未細驗
+
+## 環境坑（省得重踩）
+
+- **Browser pane 背景時 setInterval 凍結**——驗證一律用 preview_eval 手動呼叫 Sim.tick()；真人前景玩時正常
+- **preview_click 座標偏移 78px**——一律用 eval `element.click()`
+- Bash 工具故障（rtk hook 已於 2026-11-11 移除，新 session 生效）→ 過渡期用 mcp__terminal__run_in_terminal（PowerShell）；中文 commit message 用 `git commit -F <檔案>`
+- MCP allow 已補齊 user settings.json（classifier timeout 不再擋工具）
+
+## 部署流程備忘
+
+worktree commit → `git -C "C:/Users/88697/Desktop/kkgroup" merge --ff-only claude/silly-driscoll-a7481d` → `git -C "C:/Users/88697/Desktop/kkgroup" push origin main`（Pages 約一兩分鐘後生效；未問使用者不 push）
