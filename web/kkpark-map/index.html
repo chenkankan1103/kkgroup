@@ -17,6 +17,7 @@
     <div id="hudFood" class="hud-chip">🍚 25</div>
     <div id="hudClock" class="hud-chip">第 1 天 09:00</div>
     <div class="hud-chip">🗺️ 任務 <b id="misCount">0</b></div>
+    <div id="hudRaid" class="hud-chip hidden">🚨 風聲緊——今晚可能有突擊</div>
   </div>
   <div class="hud-bars">
     <div class="bar trust"><span class="bar-ic" title="組織信任">🏴</span><div class="bar-track"><div id="fillTrust"></div></div></div>
@@ -52,6 +53,17 @@
       <button id="evA" class="ev-btn main"></button>
       <button id="evB" class="ev-btn"></button>
     </div>
+  </div>
+</div>
+
+<!-- V2 警方攻堅：策略決策＋戰報（同一張卡兩種內容） -->
+<div id="raidModal" class="overlay raid hidden">
+  <div class="modal event">
+    <div class="ev-icon">🚨</div>
+    <h3>警方攻堅！</h3>
+    <p id="raidText"></p>
+    <div id="raidIntel" class="raid-intel"></div>
+    <div id="raidPlans" class="ev-choices"></div>
   </div>
 </div>
 
@@ -99,6 +111,7 @@
       <li>時間到自動結算入帳；途中跳出事件視窗，選 A 或 B 應對</li>
       <li>賺了錢按右上「💰 花錢」：買裝備、招募人手、買情報推 🚔 進度</li>
       <li>🍚 <b>伙食</b>每天清晨消耗（成功任務會順手帶一份回來）；「花錢」裡可以補伙食、🏗️ <b>蓋設施</b>——水塔產糧、發電機加薪、工寮多住人</li>
+      <li>🚨 <b>夜間攻堅</b>——傍晚收到「風聲緊」預警，深夜突擊隊就會殺到：🚧 圍籬壓低強度、多招人手應戰，或 💸 花錢消災直接擺平</li>
     </ol>
     <ul class="intro-tips">
       <li>🎯 把 🚔 <b>警方進度</b>拚到 100 → 全台收網，任務完成（勝利）</li>

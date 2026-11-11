@@ -22,6 +22,8 @@ const UI = (() => {
     Sim.on('roster', renderRoster);
     Sim.on('toast', showToast);
     Sim.on('event', showEvent);
+    Sim.on('raid', showRaidPlan);
+    Sim.on('raidResult', showRaidResult);
     Sim.on('ending', showEnding);
     Sim.on('buildings', onBuildings);
     GameMap.cb.missionClick = openMission;
@@ -46,6 +48,9 @@ const UI = (() => {
     $('hud').classList.remove('hidden');
     $('roster').classList.remove('hidden');
     renderAll();
+    // 關頁時正好在攻堅決策 → 進場重彈策略卡（sim.load 已恢復暫停）
+    const S0 = Sim.state();
+    if (S0.raid && S0.raid.phase === 'fight') showRaidPlan();
     GameMap.flyTo(HQ.lat, HQ.lng, 12);
     if (!hasSeenHow()) setTimeout(showHow, 900);
     if (Sim.state().ended) showEnding(Sim.state().ended);
@@ -79,6 +84,8 @@ const UI = (() => {
     $('fillSus').style.width = S.sus + '%';
     if (S.min % 60 === 0) GameMap.refreshPolice();
     GameMap.renderJobs(S.jobs, S.members);
+    // V2：風聲預警 chip（發動後由攻堅卡接手）
+    $('hudRaid').classList.toggle('hidden', !(S.raid && S.raid.phase === 'warn'));
     tickBuildProgress();
     tickRoster();
   }
@@ -278,6 +285,58 @@ const UI = (() => {
     $('eventModal').classList.remove('hidden');
     $('evA').onclick = () => { $('eventModal').classList.add('hidden'); Sim.chooseEvent(0); };
     $('evB').onclick = () => { $('eventModal').classList.add('hidden'); Sim.chooseEvent(1); };
+  }
+
+  /* ===== V2 警方攻堅：策略決策卡 → 戰報（同一個 modal 換內容） ===== */
+  function showRaidPlan() {
+    const S = Sim.state(); if (!S) return;
+    if (!S.raid || S.raid.phase !== 'fight') return;
+    const st = S.raid.strength;
+    const lv = st >= 70 ? '★★★ 兇悍' : st >= 55 ? '★★ 堅硬' : '★ 一般';
+    const home = S.members.filter((m) => m.state === 'idle').length;
+    $('raidText').textContent = '探照燈掃進園區，突擊隊已經包上來了——決定全園的應對：';
+    $('raidIntel').innerHTML =
+      `<div>🚨 突擊強度評估：<b class="risk">${lv}（${st}）</b></div>` +
+      `<div>🧍 在園區成員：<b>${home} 人</b>${home ? '' : '——沒人在，只能靠設施撐'}（出勤中的躲過這劫）</div>` +
+      `<div>${S.buildings.fence ? '🚧 圍籬已就位：強度被壓低過' : '🚧 沒有圍籬：強度完整，考慮花錢消災'}</div>`;
+    $('raidPlans').innerHTML = RAID_PLANS.map((p) => {
+      const off = (p.id === 'car' && !S.gear.car) || (p.id === 'bribe' && S.money < RAID.BRIBE_PRICE);
+      return `<button class="ev-btn plan" data-plan="${p.id}"${off ? ' disabled' : ''}>` +
+        `${p.icon} ${p.name}<small>${off ? '（條件不符）' : p.desc}</small></button>`;
+    }).join('');
+    $('raidPlans').querySelectorAll('[data-plan]').forEach((b) => {
+      b.onclick = () => {
+        if (Sim.resolveRaid(b.dataset.plan)) GameMap.clearRaid();  // 結算成立 → 警車散去，戰報由事件接手
+      };
+    });
+    $('raidModal').classList.remove('hidden');
+    GameMap.raidAssembly(true);
+  }
+
+  function showRaidResult(r) {
+    const S = Sim.state(); if (!S || !r) return;
+    $('raidText').textContent = r.win
+      ? '警笛聲在遠處熄滅——他們撲空了，園區還是你的。'
+      : '突擊隊破門而入，園區被翻了一整夜……';
+    const planName = (RAID_PLANS.find((p) => p.id === r.plan) || {}).name || '';
+    const lines = [];
+    if (r.plan === 'bribe') {
+      lines.push(`💸 付了 $${RAID.BRIBE_PRICE.toLocaleString()} 擺平，突擊臨時取消`);
+    } else {
+      lines.push(`${r.win ? '🛡️' : '💥'} ${planName}——防禦 ${r.def} vs 突擊 ${r.strength}`);
+      if (r.carLost) lines.push('🏎️ 贓車被拖走了（商店可再買）');
+      if (r.seized) lines.push(`💰 被抄走 $${r.seized.toLocaleString()}`);
+      if (r.caught.length) lines.push(`🚨 被逮：${r.caught.join('、')}——關進看守所（可保釋）`);
+      if (r.broken) {
+        const b = BUILDINGS.find((x) => x.id === r.broken);
+        if (b) lines.push(`⚒️ ${b.name}被撞壞了——商店重蓋`);
+      }
+    }
+    if (r.trust) lines.push(`🏴 組織信任 ${r.trust > 0 ? '+' : ''}${r.trust}`);
+    if (r.sus) lines.push(`👁️ 警方懷疑 ${r.sus > 0 ? '+' : ''}${r.sus}`);
+    $('raidIntel').innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
+    $('raidPlans').innerHTML = '<button class="ev-btn main" id="btnRaidOk">😤 繼續經營</button>';
+    $('btnRaidOk').onclick = () => $('raidModal').classList.add('hidden');
   }
 
   /* ===== 結局 ===== */

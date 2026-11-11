@@ -104,6 +104,29 @@ const BUILDINGS = [
   { id: 'dorm', icon: '🛖', name: '工寮', price: 26000, buildMin: 150, desc: '成員上限 +3' },
 ];
 
+// ===== V2：夜間警方攻堅 =====
+// 節奏：20:00 擲骰出「風聲預警」→ 02:00 深夜發動 → 彈策略卡一次結算
+const RAID = {
+  WARN_MIN: 20 * 60,  // 20:00 風聲擲骰
+  HIT_MIN: 2 * 60,    // 02:00 發動
+  GRACE_DAYS: 3,      // 前三天教學期免戰
+  BASE: 0.10, DAY_RAMP: 0.015, DAY_CAP: 0.30,   // 機率 = 基礎 + 天數遞增（封頂）
+  SUS_MULT: 0.25, POLICE_MULT: 0.15,            // 懷疑度／警方進度再加碼
+  P_MIN: 0.05, P_MAX: 0.60,
+  STRENGTH_BASE: 40, STRENGTH_DAY: 2,           // 強度 = 40 + 天數×2 + 懷疑×0.25 + 進度×0.3
+  STRENGTH_SUS: 0.25, STRENGTH_POLICE: 0.3,
+  FENCE_CUT: 0.8,     // 圍籬讓突擊強度 -20%（加上原本夜間巡邏 -25%）
+  BRIBE_PRICE: 20000, // 花錢消災
+  SEIZE_PCT: 0.25, SEIZE_CAP: 30000,            // 迎戰敗北被抄現金（躲藏/棄車更輕）
+};
+// 策略卡選項（判定在 sim.resolveRaid）
+const RAID_PLANS = [
+  { id: 'fight', icon: '⚔️', name: '死守迎戰', desc: '全員硬碰硬——贏了最有面子，輸了抓最兇' },
+  { id: 'hide', icon: '🤫', name: '全員躲藏', desc: '熄燈屏息——沒人被抓，但會被抄走一些錢' },
+  { id: 'car', icon: '🏎️', name: '棄車誘敵', desc: '犧牲贓車引開突擊隊（需要贓車）' },
+  { id: 'bribe', icon: '💸', name: '花錢消災', desc: '付 $20,000 擺平，今晚必定平安' },
+];
+
 const START = { money: 60000, trust: 60, police: 0, sus: 0, members: 2, missions: 4 };
 const JAIL_MIN = [3, 8]; // 看守所真實分鐘範圍
 

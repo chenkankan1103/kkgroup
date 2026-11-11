@@ -3,7 +3,7 @@
 
 const GameMap = (() => {
   let map = null;
-  let mMissions, mJobs, mPolice, mHQ, mBuild;
+  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid;
   const cb = {}; // 對外回呼：missionClick
   const jobMarkers = {}; // memId -> marker（不重建，才能用 CSS transition 平滑走路）
 
@@ -57,6 +57,7 @@ const GameMap = (() => {
     mMissions = L.layerGroup().addTo(map);
     mJobs = L.layerGroup().addTo(map);
     mBuild = L.layerGroup().addTo(map);
+    mRaid = L.layerGroup().addTo(map);
 
     L.marker([HQ.lat, HQ.lng], {
       icon: divIcon('<div class="mk-hq">🏢<span>園區總部</span></div>', [76, 26]),
@@ -164,6 +165,31 @@ const GameMap = (() => {
     });
   }
 
+  // ===== V2：攻堅集結——警車紅藍閃爍從四面八方圍向總部；結算後撤走 =====
+  // 放獨立圖層，不會被 refreshPolice 的 clearLayers() 掃掉
+  let raidCars = [];
+  function raidAssembly(on) {
+    if (!map) return;
+    clearRaid();
+    if (!on) return;
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 + Math.random() * 0.6;
+      const dist = 0.02 + Math.random() * 0.012;
+      const mk = L.marker([HQ.lat + Math.sin(ang) * dist, HQ.lng + Math.cos(ang) * dist * 1.25], {
+        icon: divIcon('🚓', [24, 24], 'raid-cop-wrap'), interactive: false,
+      }).addTo(mRaid);
+      raidCars.push(mk);
+      // 下一拍 setLatLng 一次到位，CSS transition 補間 1.8 秒慢慢圍上來
+      const to = [HQ.lat + Math.sin(ang) * 0.0014, HQ.lng + Math.cos(ang) * 0.0014];
+      setTimeout(() => { try { mk.setLatLng(to); } catch (e) {} }, 80);
+    }
+  }
+  function clearRaid() {
+    raidCars.forEach((m) => { try { mRaid.removeLayer(m); } catch (e) {} });
+    raidCars = [];
+  }
+
   function flyTo(lat, lng, z) {
     if (!map) return;
     // 沒指定 zoom → 至少拉近到 13（看任務）；有指定就用指定的（進場用 12 看全區）
@@ -180,5 +206,5 @@ const GameMap = (() => {
     return mPolice ? mPolice.getLayers().map((l) => l.getLatLng()) : [];
   }
 
-  return { init, refreshPolice, renderMissions, renderJobs, renderBuildings, flyTo, getCenter, copPositions, cb };
+  return { init, refreshPolice, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, cb };
 })();

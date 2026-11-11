@@ -298,6 +298,36 @@ button.pick:hover { border-color: var(--pink); }
 }
 #footNote a { color: var(--dim); }
 
+/* ===== V2 夜間攻堅 ===== */
+#hudRaid { color: var(--red); border-color: var(--red); animation: foodBlink 1.1s ease-in-out infinite; }
+
+/* 攻堅卡的 overlay 較透——讓底下警車集結的畫面看得到 */
+.overlay.raid { background: rgba(5, 7, 12, 0.5); backdrop-filter: blur(1.5px); }
+
+/* 集結警車：transform 由 setLatLng 驅動、CSS 補間圍上來；燈光紅藍交替 */
+.raid-cop-wrap {
+  background: none; border: none; font-size: 24px;
+  transition: transform 1.8s cubic-bezier(0.3, 0, 0.7, 1);
+  animation: copFlash 0.45s steps(2) infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 77, 109, 0.95));
+}
+.leaflet-zoom-anim .raid-cop-wrap { transition: none; }
+@keyframes copFlash {
+  0%, 49% { filter: drop-shadow(0 0 8px rgba(255, 77, 109, 0.95)); }
+  50%, 100% { filter: drop-shadow(0 0 8px rgba(90, 167, 255, 0.95)); }
+}
+
+button.plan small { display: block; color: var(--dim); font-size: 11px; margin-top: 3px; }
+button.plan:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.raid-intel {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 9px 12px; font-size: 12.5px; color: var(--dim);
+  display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; text-align: left;
+}
+.raid-intel b { color: var(--txt); }
+.raid-intel .risk { color: var(--red); }
+
 /* ===== 窄螢幕 ===== */
 @media (max-width: 720px) {
   #roster {

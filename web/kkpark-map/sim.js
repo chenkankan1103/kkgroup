@@ -300,6 +300,10 @@ const Sim = (() => {
     // 清晨六點結算伙食：水塔產出 → 全員開飯 → 斷糧懲罰
     if (S.min === 360) dailyFood();
 
+    // V2：20:00 風聲擲骰 → 02:00 深夜發動攻堅（暫停中鐘不走，不會跳過觸發點）
+    if (S.min === RAID.WARN_MIN) rollRaid();
+    if (S.min === RAID.HIT_MIN && S.raid && S.raid.phase === 'warn') startRaid();
+
     for (const mem of S.members) {
       if (mem.state === 'jail' && Date.now() >= mem.jailUntil) {
         mem.state = 'idle'; mem.jailUntil = 0;
@@ -325,6 +329,114 @@ const Sim = (() => {
     }
   }
 
+  // ===== V2：夜間警方攻堅（風聲 → 深夜突擊 → 策略結算；重傷不致死） =====
+  function raidChance() {
+    let p = RAID.BASE + Math.min(RAID.DAY_CAP, Math.max(0, S.day - RAID.GRACE_DAYS) * RAID.DAY_RAMP)
+      + (S.sus / 100) * RAID.SUS_MULT + (S.police / 100) * RAID.POLICE_MULT;
+    if (S.lastRaidDay === S.day) p *= 0.5;  // 凌晨剛被打過，連夜轟炸機率減半
+    return Math.max(RAID.P_MIN, Math.min(RAID.P_MAX, p));
+  }
+
+  function raidStrength() {
+    let s = RAID.STRENGTH_BASE + S.day * RAID.STRENGTH_DAY
+      + S.sus * RAID.STRENGTH_SUS + S.police * RAID.STRENGTH_POLICE;
+    if (S.buildings.fence) s *= RAID.FENCE_CUT;
+    return Math.round(s);
+  }
+
+  function rollRaid() {
+    if (S.raid || S.ended || S.day <= RAID.GRACE_DAYS) return;
+    if (Math.random() >= raidChance()) return;
+    S.raid = { phase: 'warn', strength: raidStrength() };
+    Save.write(S);
+    emit('toast', { icon: '📡', text: '線報：今晚風聲很緊，警方可能在集結突擊——深夜前快做準備！' });
+    emit('raidWarn');
+  }
+
+  function startRaid() {
+    S.raid.phase = 'fight';
+    paused = true;
+    Save.write(S);
+    emit('raid', { strength: S.raid.strength });
+  }
+
+  // 玩家選定策略 → 一次結算。不新增結局路徑：攻堅是大失血，死亡仍走信任歸零／懷疑滿百
+  function resolveRaid(planId) {
+    const raid = S.raid;
+    if (!raid || raid.phase !== 'fight') return null;
+    if (!RAID_PLANS.some((x) => x.id === planId)) return null;
+    if (planId === 'car' && !S.gear.car) return null;
+    if (planId === 'bribe' && S.money < RAID.BRIBE_PRICE) return null;
+
+    // 只有在園區的成員參與攻防——出勤中的躲過這劫、看守所裡的本來就進去了
+    const home = S.members.filter((m) => m.state === 'idle');
+    const r = { plan: planId, win: false, strength: raid.strength, def: 0, seized: 0, caught: [], broken: null, trust: 0, sus: 0 };
+
+    if (planId === 'bribe') {
+      S.money -= RAID.BRIBE_PRICE;
+      r.win = true; r.sus = -5;
+    } else {
+      let def, edge;
+      if (planId === 'car') {
+        S.gear.car = false; r.carLost = true;
+        def = 28 + home.length * 3; edge = 0.85;   // 突擊隊分兵追車，判定門檻降低
+      } else if (planId === 'hide') {
+        def = home.length * 4 + (S.buildings.fence ? 15 : 0); edge = 1;
+      } else { // fight
+        const best = home.length ? home.reduce((s, m) => s + Math.max(m.gab, m.legs, m.luck), 0) / home.length : 0;
+        def = home.length * 8 + best * 2; edge = 1;
+      }
+      r.def = Math.round(def);
+      r.win = def + rndInt(-10, 10) >= raid.strength * edge;
+    }
+
+    if (r.win) {
+      if (planId === 'fight') { r.trust = 6; r.sus = -10; }   // 硬仗打贏，上頭另眼相看
+      else if (planId === 'hide') { r.trust = 2; r.sus = -6; }
+    } else {
+      // 被抄現金：迎戰敗北最痛，躲藏次之，棄車最輕（突擊隊追車去了）
+      const pct = planId === 'fight' ? RAID.SEIZE_PCT : planId === 'hide' ? 0.15 : 0.10;
+      const cap = planId === 'fight' ? RAID.SEIZE_CAP : planId === 'hide' ? 20000 : 15000;
+      r.seized = Math.min(Math.round(S.money * pct), cap);
+      S.money -= r.seized;
+      if (planId === 'fight') {
+        r.trust = -8; r.sus = 10;
+        // 前線成員被逮 1-2 人（可保釋）
+        const nCatch = Math.min(home.length, rndInt(1, 2));
+        for (let i = 0; i < nCatch; i++) {
+          const pool = home.filter((m) => m.state === 'idle');
+          if (!pool.length) break;
+          const mem = pool[(Math.random() * pool.length) | 0];
+          mem.state = 'jail';
+          mem.jailUntil = Date.now() + rndInt(JAIL_MIN[0], JAIL_MIN[1]) * 60000;
+          mem.caught++;
+          r.caught.push(mem.name);
+        }
+        // 隨機一棟已完工設施被撞壞——拆掉了要重新蓋（施工中的不受影響）
+        const built = Object.keys(S.buildings);
+        if (built.length) {
+          const bid = built[(Math.random() * built.length) | 0];
+          delete S.buildings[bid];
+          r.broken = bid;
+          emit('buildings');
+        }
+      } else if (planId === 'hide') {
+        r.trust = -4; r.sus = 6;
+      } else { // car
+        r.trust = -6; r.sus = 2;
+      }
+      emit('roster');
+    }
+    S.trust = clamp100(S.trust + r.trust);
+    S.sus = clamp100(S.sus + r.sus);
+    S.lastRaidDay = S.day;
+    S.raid = null;
+    paused = false;
+    after();
+    emit('raidResult', r);
+    return r;
+  }
+
   function checkEndings() {
     if (!S || S.ended) return;
     if (S.trust <= 0) S.ended = 'silenced';
@@ -343,7 +455,11 @@ const Sim = (() => {
     if (S.food === undefined) S.food = START_FOOD;
     if (!S.buildings) S.buildings = {};
     if (!S.buildQueue) S.buildQueue = [];
+    if (S.raid === undefined) S.raid = null;       // V2 攻堅欄位
+    if (!S.lastRaidDay) S.lastRaidDay = 0;
     S.v = 2;
+    // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
+    if (S.raid && S.raid.phase === 'fight') paused = true;
     for (const id in S.jobs) {
       const j = S.jobs[id];
       if (!j.leg) { j.leg = 'work'; j.pos = { lat: j.m.lat, lng: j.m.lng }; j.settled = false; }
@@ -440,7 +556,7 @@ const Sim = (() => {
 
   return {
     on, newGame, load, restart, tick,
-    assign, chooseEvent, bail, hire, buyGear, buyIntel, genMission,
+    assign, chooseEvent, bail, hire, buyGear, buyIntel, genMission, resolveRaid,
     build, buyFood, memberCap,
     memberById, bailCost,
     state: () => S,
