@@ -50,12 +50,82 @@ const Sim = (() => {
     for (let i = 0; i < START.missions; i++) genMission();
   }
 
-  // ===== V2.7：勢力範圍——半徑隨信任／警方進度／懷疑進退，任務落在圈內有修正 =====
+  // ===== V2.7/V2.8：勢力範圍——瓣狀形狀，隨建築／信任／警方進度進退 =====
+  // 詐團瓣：總部＋每棟已完工建築各一瓣，半徑隨信任（地盤是你蓋出來的形狀）
+  // 警方瓣：分局＋附近路網決定性挑出的派出所點，半徑隨警方進度與懷疑
   function parkRadius() { return TURF.PARK_BASE + S.trust * TURF.PARK_TRUST; }
   function policeRadius() { return TURF.POLICE_BASE + S.police * TURF.POLICE_PROG + S.sus * TURF.POLICE_SUS; }
+
+  // 詐團勢力瓣清單 [{lat, lng}]——總部＋建築（B_SPOTS 位移對齊地圖上的建築圖示）
+  const B_OFFSETS = [[0.0018, 0.0018], [0.0018, -0.0018], [-0.0018, 0.0018], [-0.0018, -0.0018], [0.0028, 0]];
+  function parkPetals() {
+    const list = [{ lat: HQ.lat, lng: HQ.lng }];
+    BUILDINGS.forEach((b, i) => {
+      if (S.buildings[b.id]) {
+        const [dLat, dLng] = B_OFFSETS[i % B_OFFSETS.length];
+        list.push({ lat: HQ.lat + dLat, lng: HQ.lng + dLng });
+      }
+    });
+    return list;
+  }
+
+  // 警方勢力瓣清單——分局核心＋附近路網上決定性挑出的派出所點（同一存檔永遠同一批）
+  let policePetalsCache = null;
+  function policePetals() {
+    if (policePetalsCache) return policePetalsCache;
+    const list = [{ lat: TURF.POLICE_CENTER.lat, lng: TURF.POLICE_CENTER.lng }];
+    if (typeof ROAD_NET !== 'undefined' && ROAD_NET.length) {
+      const c = TURF.POLICE_CENTER, picked = [];
+      for (const ch of ROAD_NET) {
+        for (const p of ch) {
+          const d = Math.hypot(p[1] - c.lng, p[0] - c.lat);
+          if (d > 0.012 && d <= 0.03) picked.push({ p, d });
+        }
+      }
+      // 決定性挑選：依距離排序後用固定種子雜湊挑點，並拉開最小間距避免疊成一團
+      picked.sort((a, b) => a.d - b.d);
+      const want = TURF.POLICE_SUBS, MIN_GAP = 0.014;
+      for (const cand of picked) {
+        if (list.length >= want + 1) break;
+        if (Math.abs(hash3Str(cand.p[0] + ',' + cand.p[1], 7)) % 1000 / 1000 > 0.6) continue;
+        if (list.concat(picked).length && list.every((q) => Math.hypot(cand.p[1] - q.lng, cand.p[0] - q.lat) >= MIN_GAP)) {
+          list.push({ lat: cand.p[0], lng: cand.p[1] });
+        }
+      }
+      // 補不滿就用方位角均勻補點（保證形狀完整）
+      while (list.length < want + 1) {
+        const ang = (list.length / (want + 1)) * Math.PI * 2;
+        list.push({ lat: c.lat + Math.sin(ang) * 0.022, lng: c.lng + Math.cos(ang) * 0.022 });
+      }
+    } else {
+      for (let i = 1; i <= TURF.POLICE_SUBS; i++) {
+        const ang = (i / (TURF.POLICE_SUBS + 1)) * Math.PI * 2;
+        list.push({ lat: TURF.POLICE_CENTER.lat + Math.sin(ang) * 0.022, lng: TURF.POLICE_CENTER.lng + Math.cos(ang) * 0.022 });
+      }
+    }
+    policePetalsCache = list;
+    return list;
+  }
+
+  // 簡易字串雜湊（派出所挑選用，決定性）
+  function hash3Str(str, salt) {
+    let h = salt | 0;
+    for (let i = 0; i < str.length; i++) h = (Math.imul(h ^ str.charCodeAt(i), 2654435761) | 0);
+    h ^= h >>> 13;
+    return Math.abs(h);
+  }
+
   function zoneOf(lat, lng) {
-    const inPark = Math.hypot(lng - HQ.lng, lat - HQ.lat) <= parkRadius();
-    const inPolice = Math.hypot(lng - TURF.POLICE_CENTER.lng, lat - TURF.POLICE_CENTER.lat) <= policeRadius();
+    let inPark = false, inPolice = false;
+    const pr = parkRadius(), qr = policeRadius();
+    for (const p of parkPetals()) {
+      if (Math.hypot(lng - p.lng, lat - p.lat) <= pr) { inPark = true; break; }
+    }
+    if (!inPark || true) {
+      for (const p of policePetals()) {
+        if (Math.hypot(lng - p.lng, lat - p.lat) <= qr) { inPolice = true; break; }
+      }
+    }
     if (inPark && inPolice) return 'contested';
     if (inPark) return 'park';
     if (inPolice) return 'police';
@@ -673,7 +743,7 @@ const Sim = (() => {
     on, newGame, load, restart, tick,
     assign, chooseEvent, bail, hire, buyGear, buyIntel, genMission, resolveRaid,
     build, buyFood, memberCap, buryCash, tributeCost, raidBribeCost,
-    parkRadius, policeRadius, zoneOf,
+    parkRadius, policeRadius, zoneOf, parkPetals, policePetals,
     memberById, bailCost,
     state: () => S,
     isPaused: () => paused,

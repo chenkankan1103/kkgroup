@@ -3,7 +3,7 @@
 
 const GameMap = (() => {
   let map = null;
-  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, parkCircle, policeCircle;
+  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf;
   const cb = {}; // 對外回呼：missionClick
   const jobMarkers = {}; // memId -> marker（不重建，才能用 CSS transition 平滑走路）
 
@@ -117,11 +117,11 @@ const GameMap = (() => {
         if (!near) continue;
         const pts = roadIdx.get(cx + ',' + cy);
         if (!pts) continue;
-        // V2.7：勢力圈內密度不同——警方圈車多、我方地盤車少（視覺上圈內圈外不一樣）
-        const cellLat = cy * CELL, cellLng = cx * CELL;
+        // V2.7/V2.8：勢力瓣內密度不同——警方瓣車多、我方地盤車少（用 zoneOf 多瓣判定）
+        const zone = Sim.zoneOf(cy * CELL, cx * CELL);
         let dens2 = dens;
-        if (Math.hypot(cellLng - TURF.POLICE_CENTER.lng, cellLat - TURF.POLICE_CENTER.lat) <= Sim.policeRadius()) dens2 *= TURF.COP_BOOST_POLICE;
-        else if (Math.hypot(cellLng - HQ.lng, cellLat - HQ.lat) <= Sim.parkRadius()) dens2 *= TURF.COP_SUPPRESS_PARK;
+        if (zone === 'police' || zone === 'contested') dens2 *= TURF.COP_BOOST_POLICE;
+        else if (zone === 'park') dens2 *= TURF.COP_SUPPRESS_PARK;
         for (let k = 0; k < 2; k++) {
           if (hash3(cx, cy, 7 + k) < dens2 * 0.45) {
             const e = pts[(hash3(cx, cy * 3 + k, 11) * pts.length) | 0];
@@ -212,20 +212,34 @@ const GameMap = (() => {
     });
   }
 
-  // ===== V2.7：勢力範圍圈——綠圈＝詐團地盤（信任撐大）、紅圈＝警方勢力（進度/懷疑外壓） =====
-  // 半徑只在變動超過 20 公尺時重設，避免每秒重繪
+  // ===== V2.7/V2.8：勢力範圍——瓣狀淡色圓疊加，疊出有機形狀 =====
+  // 詐團瓣＝總部＋每棟建築（地盤是蓋出來的形狀）；警方瓣＝分局＋派出所點。
+  // 每瓣是 fill 5% 的獨立圓，重疊處自然變濃；半徑變動 >20m 才重設，減少重繪。
+  let parkPetalsCircles = [], policePetalsCircles = [];
   function renderTurf() {
     if (!map) return;
-    if (!parkCircle) {
-      parkCircle = L.circle([HQ.lat, HQ.lng], { radius: 1, className: 'turf-park', interactive: false }).addTo(mTurf);
-      policeCircle = L.circle([TURF.POLICE_CENTER.lat, TURF.POLICE_CENTER.lng], { radius: 1, className: 'turf-police', interactive: false }).addTo(mTurf);
-      parkCircle._r = -1;
-      policeCircle._r = -1;
+    const pp = Sim.parkPetals(), qp = Sim.policePetals();
+    const pr = Sim.parkRadius() * 111320, qr = Sim.policeRadius() * 111320;
+    // 詐團瓣：數量對齊建築狀態（蓋好→多一瓣；被拆→收回），半徑跟信任
+    parkPetalsCircles = syncPetals(parkPetalsCircles, pp, pr, 'turf-park', (c, i) => c._r !== pr);
+    policePetalsCircles = syncPetals(policePetalsCircles, qp, qr, 'turf-police', (c, i) => c._r !== qr);
+  }
+  function syncPetals(circles, pts, radiusM, cls, needsUpdate) {
+    // 收多餘的
+    while (circles.length > pts.length) { mTurf.removeLayer(circles.pop()); }
+    for (let i = 0; i < pts.length; i++) {
+      let c = circles[i];
+      if (!c) {
+        c = L.circle([pts[i].lat, pts[i].lng], { radius: radiusM, className: cls, interactive: false }).addTo(mTurf);
+        c._r = -1; c._pos = '';
+        circles.push(c);
+      } else {
+        const posKey = pts[i].lat.toFixed(5) + ',' + pts[i].lng.toFixed(5);
+        if (c._pos !== posKey) { c.setLatLng([pts[i].lat, pts[i].lng]); c._pos = posKey; }
+      }
+      if (Math.abs(radiusM - c._r) > 20) { c.setRadius(radiusM); c._r = radiusM; }
     }
-    const pr = Sim.parkRadius() * 111320;
-    const qr = Sim.policeRadius() * 111320;
-    if (Math.abs(pr - parkCircle._r) > 20) { parkCircle.setRadius(pr); parkCircle._r = pr; }
-    if (Math.abs(qr - policeCircle._r) > 20) { policeCircle.setRadius(qr); policeCircle._r = qr; }
+    return circles;
   }
 
   // ===== V2：攻堅集結——警車紅藍閃爍從四面八方圍向總部；結算後撤走 =====
