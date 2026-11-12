@@ -43,6 +43,19 @@ const MISSION_TYPES = {
 const MISSION_POOL = [
   { k: 'scam', w: 30 }, { k: 'pickup', w: 30 }, { k: 'cargo', w: 30 }, { k: 'intel', w: 10 },
 ];
+// V3.0：第二幕任務——蒐證（總部戰前置）與掃蕩（反轉後唯一任務）
+const ACT2_MISSION_TYPES = {
+  evidence: {
+    name: '蒐證任務', icon: '🔍', stat: 'luck', statName: '運氣',
+    desc: '摸進總部外圍偷拍帳冊——破門行動的門票',
+    dur: [60, 120], pay: [0, 0], risk: 0.38, trust: -6,
+  },
+  sweep: {
+    name: '掃蕩行動', icon: '🔨', stat: 'legs', statName: '腿力',
+    desc: '帶警方端掉詐團的洗錢點——壓低據點鎮壓條',
+    dur: [90, 180], pay: [8000, 16000], risk: 0.42, trust: 9,
+  },
+};
 
 // ===== 短任務隨機事件（A/B 二選一）=====
 // kind: risk = 擲能力（失敗有代價）、abandon = 丟包斷尾、continue = 穩穩過
@@ -149,6 +162,36 @@ const TRIBUTE = {                      // 每天晚上上頭抽成——錢的�
 };
 const MISSION_TTL = [360, 720];        // 任務時效（遊戲分鐘＝真實秒）6~12 小時，過期熄掉
 const RAID_FIRST_RELIEF = 0.6;         // 第一次突擊是試探規模，強度打六折
+
+// ===== V3.0：第二幕——扳倒總部 → 反轉線民 → 掃蕩詐團據點 =====
+const ACT2 = {
+  UNLOCK_POLICE: 50,      // 警方進度 ≥ 50 解鎖破門行動
+  EVIDENCE_NEED: 2,       // 需完成 2 次蒐證任務才可發動總部決戰
+  EVIDENCE_POLICE: 8,     // 蒐證成功給的警方進度
+  HQ_RAID: {
+    // 三種戰法：成功率修正＋成功報酬／失敗懲罰
+    PLANS: [
+      { id: 'assault', icon: '🗡️', name: '閃電強攻', desc: '風險高、成功報酬最肥（進度 +18）', mod: 0.85, winPolice: 18, losePolice: -18 },
+      { id: 'steady', icon: '🛡️', name: '穩紮圍捕', desc: '穩定推進（進度 +12）', mod: 1.0, winPolice: 12, losePolice: -15 },
+      { id: 'backup', icon: '🚓', name: '請求大隊支援', desc: '花 $25,000 調鎮暴警，最穩（進度 +10）', mod: 1.3, winPolice: 10, losePolice: -8, cost: 25000 },
+    ],
+    LOSE_SUS: 12,         // 打草驚蛇——詐團起疑
+    WIN_SUS_RELIEF: -20,  // 總部倒了，沒人再追你的帳
+  },
+  // 反轉後的詐團據點（NPC）——位置取真實地點附近，owner 欄位預留未來真人版
+  CELLS: [
+    { id: 'cellA', name: '觀音山據點', boss: '阿海', lat: 22.665, lng: 120.262 },
+    { id: 'cellB', name: '機場線據點', boss: '大丙', lat: 22.585, lng: 120.345 },
+    { id: 'cellC', name: '旗津倉庫', boss: '阿豹', lat: 22.602, lng: 120.275 },
+  ],
+  CELL_SUPPRESS_BASE: 60,   // 據點鎮壓條開局值（掃蕩把它壓到 0 = 端掉）
+  SWEEP_PAY: [8000, 16000], // 掃蕩任務報酬
+  SWEEP_TRUST: 9,           // 掃蕩成功的警方倚重
+  RETALIATE_BASE: 0.22,     // 二幕夜襲基礎機率（詐團報復，取代警方攻堅）
+  RETALIATE_SUS: 0.003,     // 仇恨每點加成（仇恨 100 → +30%）
+  RETALIATE_PER_CELL: 0.08, // 每剩一個據點 +8%（端越多被越兇）
+  WIN_TRUST: 6,             // 二幕成功防守的倚重
+};
 
 const START = { money: 60000, trust: 60, police: 0, sus: 0, members: 2, missions: 4 };
 const JAIL_MIN = [3, 8]; // 看守所真實分鐘範圍

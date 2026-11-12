@@ -24,9 +24,12 @@ const UI = (() => {
     Sim.on('event', showEvent);
     Sim.on('raid', showRaidPlan);
     Sim.on('raidResult', showRaidResult);
+    Sim.on('hqRaidResult', showHqRaidResult);
     Sim.on('ending', showEnding);
     Sim.on('buildings', onBuildings);
     GameMap.cb.missionClick = openMission;
+    GameMap.cb.hqClick = openHqRaid;
+    GameMap.cb.cellClick = openCellPanel;
 
     const hasSave = !!Save.read();
     $('btnContinue').classList.toggle('hidden', !hasSave);
@@ -63,6 +66,8 @@ const UI = (() => {
     renderRoster();
     renderMissions();
     GameMap.renderBuildings(Sim.state());
+    GameMap.renderTurf();
+    GameMap.renderAct2(Sim.state());
     onTick();
   }
 
@@ -79,6 +84,11 @@ const UI = (() => {
     $('hudClock').textContent = Sim.clockStr() + (dens >= 1.1 ? ' 🚨' : dens <= 0.5 ? ' 🌙' : ' ☀️');
     $('hudMoney').textContent = '💰 $' + S.money.toLocaleString();
     $('hudFood').textContent = '🍚 ' + S.food;
+    // V3.0：二幕數值條語義反轉——信任＝警方倚重、懷疑＝詐團仇恨
+    if (S.act2) {
+      $('fillTrust').style.width = S.trust + '%';
+      $('fillSus').style.width = S.sus + '%';
+    }
     $('hudFood').classList.toggle('low', S.food <= 3);
     $('fillTrust').style.width = S.trust + '%';
     $('fillPolice').style.width = S.police + '%';
@@ -207,7 +217,7 @@ const UI = (() => {
     const S = Sim.state(); if (!S) return;
     const m = S.missions.find((x) => x.id === curMissionId);
     if (!m) { $('misPanel').classList.add('hidden'); return; }
-    const t = MISSION_TYPES[m.type];
+    const t = MISSION_TYPES[m.type] || ACT2_MISSION_TYPES[m.type];
     $('misBody').innerHTML = `
       <div class="mis-head">${t.icon} <b>${t.name}</b><span class="mis-code">${m.code}</span></div>
       <p class="mis-desc">${t.desc}</p>
@@ -244,7 +254,8 @@ const UI = (() => {
     const S = Sim.state();
     const idle = S.members.filter((x) => x.state === 'idle');
     if (!idle.length) return '<div class="none">沒有閒人——去招募，或等有人在看守所出來</div>';
-    const best = MISSION_TYPES[m.type].stat, statName = MISSION_TYPES[m.type].statName;
+    const best = (MISSION_TYPES[m.type] || ACT2_MISSION_TYPES[m.type]).stat;
+    const statName = (MISSION_TYPES[m.type] || ACT2_MISSION_TYPES[m.type]).statName;
     return idle.map((x) =>
       `<button class="pick" data-mem="${x.id}">${x.avatar} ${x.name}<small>${statName} ${x[best]}</small></button>`
     ).join('');
@@ -371,6 +382,75 @@ const UI = (() => {
     $('btnRaidOk').onclick = () => $('raidModal').classList.add('hidden');
   }
 
+  /* ===== V3.0 第二幕：總部決戰卡 → 戰報 → 反轉劇情 → 據點面板 ===== */
+  function openHqRaid() {
+    const S = Sim.state(); if (!S) return;
+    if (S.act2 || !Sim.hqRaidReady()) return;
+    $('raidText').textContent = '破門行動——詐團總部就在眼前。選擇突入方式，一翻兩瞪眼：';
+    const power = Math.round((S.police * 0.9 + S.evidence * 6 + (S.gear.vpn ? 4 : 0)));
+    const need = 55 + S.hqRaidFail * 8;
+    $('raidIntel').innerHTML =
+      `<div>🚔 我方戰力評估：<b class="risk">${power}</b>（警方進度＋蒐證覆蓋）</div>` +
+      `<div>🏚️ 總部防備強度：<b>${need}</b>${S.hqRaidFail ? `（之前失手過 ${S.hqRaidFail} 次，他們加強了戒備）` : ''}</div>` +
+      `<div>🔍 蒐證：${S.evidence}/${ACT2.EVIDENCE_NEED} 份${S.evidence >= ACT2.EVIDENCE_NEED ? '——齊了' : '——還不夠'}</div>`;
+    $('raidPlans').innerHTML = ACT2.HQ_RAID.PLANS.map((p) => {
+      const off = p.cost && S.money < p.cost;
+      return `<button class="ev-btn plan" data-hq="${p.id}"${off ? ' disabled' : ''}>` +
+        `${p.icon} ${p.name}<small>${off ? '（錢不夠）' : p.desc}</small></button>`;
+    }).join('');
+    $('raidPlans').querySelectorAll('[data-hq]').forEach((b) => {
+      b.onclick = () => {
+        $('raidModal').classList.add('hidden');
+        Sim.resolveHqRaid(b.dataset.hq);
+      };
+    });
+    $('raidModal').classList.remove('hidden');
+  }
+
+  function showHqRaidResult(r) {
+    const S = Sim.state(); if (!S || !r) return;
+    $('raidText').textContent = r.win
+      ? '總部的鐵門被撞開——帳冊、機房、名單全被起出。你反水的事，再也瞞不住了。'
+      : '突入失敗——他們早有防備，行動組被火力壓了回來。';
+    const plan = ACT2.HQ_RAID.PLANS.find((p) => p.id === r.plan) || {};
+    const lines = [
+      `${r.win ? '✅' : '💥'} ${r.name}——戰力 ${r.power} vs 防備 ${r.need}`,
+      `🚔 警方進度 ${r.win ? '+' : ''}${r.win ? plan.winPolice : plan.losePolice}`,
+    ];
+    if (!r.win) {
+      lines.push('🔍 一份蒐證作廢');
+      lines.push(`👁️ 詐團起疑 +${ACT2.HQ_RAID.LOSE_SUS}（下次他們防更緊）`);
+    }
+    $('raidIntel').innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
+    // 勝利：戰報的按鈕接續反轉劇情卡（同一個 modal 連播，時序不互踩）
+    $('raidPlans').innerHTML = '<button class="ev-btn main" id="btnHqOk">' + (r.win ? '🕶️ 迎接新身分' : '😖 重整旗鼓') + '</button>';
+    $('btnHqOk').onclick = () => { if (r.win) showAct2Intro(); else $('raidModal').classList.add('hidden'); };
+  }
+
+  function showAct2Intro() {
+    $('raidText').textContent = '你交出了最後一份名單。檢察官在保護令上簽了字——從今天起，你是警方的人。';
+    $('raidIntel').innerHTML = [
+      '🛡️ 園區轉為警方保護的釣魚據點——貢金不用再繳',
+      '🐍 但詐團已經知道你反水：夜間來的不再是警察，是「清理門戶」的人',
+      '🏭 全台還有 3 個詐團據點在燒錢運轉——做 🔨 掃蕩行動把它們一個個端掉',
+      '👁️ 紅色長條現在是詐團的仇恨：滿了就是滅口',
+    ].map((l) => `<div>${l}</div>`).join('');
+    $('raidPlans').innerHTML = '<button class="ev-btn main" id="btnAct2Ok">🚔 開始第二幕</button>';
+    $('btnAct2Ok').onclick = () => $('raidModal').classList.add('hidden');
+  }
+
+  function openCellPanel(cell) {
+    const S = Sim.state(); if (!S) return;
+    $('raidText').textContent = `${cell.name}——${cell.boss} 在管的新據點，還在燒錢運轉。`;
+    const idle = S.members.filter((m) => m.state === 'idle').length;
+    $('raidIntel').innerHTML =
+      `<div>🏭 鎮壓進度：<b class="risk">${100 - cell.suppress}%</b>（掃蕩成功會推高，滿了就端掉）</div>` +
+      `<div>🧍 待命成員：<b>${idle} 人</b></div>` +
+      `<div>🔨 做「掃蕩行動」任務——標記就撒在這個據點附近</div>`;
+    $('raidPlans').innerHTML = '<button class="ev-btn main" id="btnCellOk">🫡 收到</button>';
+    $('btnCellOk').onclick = () => $('raidModal').classList.add('hidden');
+  }
+
   /* ===== 結局 ===== */
   const ENDINGS = {
     silenced: {
@@ -381,6 +461,11 @@ const UI = (() => {
     jailed: {
       icon: '👁️', title: '核心犯收押',
       text: '收網名單上有你的名字——不是線人那份，是核心成員那份。警方當作什麼都沒發生。',
+      win: false,
+    },
+    purged: {
+      icon: '🐍', title: '清理門戶',
+      text: '仇恨值滿了。某個深夜，一輛沒有車牌的廂型車停在你家樓下——詐團對叛徒只有一種處理方式。',
       win: false,
     },
     raid: {

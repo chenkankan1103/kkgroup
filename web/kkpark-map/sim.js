@@ -45,6 +45,7 @@ const Sim = (() => {
       gear: {}, members: [], nextId: 1, missions: [], nextMid: 1,
       jobs: {}, nextGen: 0, ended: null,
       buried: 0, buriedRefund: 0, raidCount: 0, bribeCount: 0,  // V2.5
+      act2: false, evidence: 0, hqRaidFail: 0, cells: null,     // V3.0 第二幕
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
     for (let i = 0; i < START.missions; i++) genMission();
@@ -132,22 +133,131 @@ const Sim = (() => {
     return 'none';
   }
 
+  // ===== V3.0：第二幕——破門行動（總部決戰）→ 陣營反轉 → 掃蕩據點 =====
+  const ACT2_HQ_POS = { lat: 22.672, lng: 120.318 };  // 詐團總部（東北 ~2.5km）
+
+  function hqRaidReady() { return S.police >= ACT2.UNLOCK_POLICE && S.evidence >= ACT2.EVIDENCE_NEED; }
+
+  // 蒐證任務結算掛點：成功 → evidence+1＋警方進度
+  function onEvidenceSuccess() {
+    S.evidence++;
+    S.police = clamp100(S.police + ACT2.EVIDENCE_POLICE);
+    emit('toast', { icon: '🔍', text: `蒐證到手（${S.evidence}/${ACT2.EVIDENCE_NEED}）——總部的帳冊快湊齊了，警方進度 +${ACT2.EVIDENCE_POLICE}` });
+    if (S.evidence >= ACT2.EVIDENCE_NEED) {
+      emit('toast', { icon: '🚪', text: '破門行動就緒！點地圖上的 🏚️ 詐團總部發動決戰' });
+    }
+    emit('missions');
+  }
+
+  // 總部決戰：三戰法一張卡（同攻堅決策的介面語言），成敗都在這裡定案
+  function resolveHqRaid(planId) {
+    if (!hqRaidReady() || S.act2) return null;
+    const plan = ACT2.HQ_RAID.PLANS.find((x) => x.id === planId);
+    if (!plan) return null;
+    if (plan.cost && S.money < plan.cost) return null;
+    if (plan.cost) S.money -= plan.cost;
+    // 判定：警方進度＋蒐證＋戰法修正 vs 固定難度＋失手遞增（詐團愈防愈緊）
+    const power = S.police * 0.9 + S.evidence * 6 + (S.gear.vpn ? 4 : 0);
+    const need = 55 + S.hqRaidFail * 8;
+    const win = power * plan.mod + rndInt(-8, 8) >= need;
+    const r = { plan: planId, win, power: Math.round(power * plan.mod), need, name: plan.name };
+    if (win) {
+      S.police = clamp100(S.police + plan.winPolice);
+      startAct2();
+      emit('hqRaidResult', r);
+    } else {
+      S.police = clamp100(S.police + plan.losePolice);
+      S.evidence = Math.max(0, S.evidence - 1);   // 打草驚蛇，一份蒐證作廢
+      addSus(ACT2.HQ_RAID.LOSE_SUS);
+      S.hqRaidFail++;
+      after();
+      emit('hqRaidResult', r);
+    }
+    return r;
+  }
+
+  // 陣營反轉：同一套系統攻守互換
+  function startAct2() {
+    S.act2 = true;
+    // 數值重鑄：懷疑 → 詐團仇恨（他們知道你反了）；信任 → 警方倚重（安家費）
+    S.sus = clamp100(S.sus + 30);
+    S.trust = clamp100(S.trust + 10);
+    // 生成 NPC 據點（owner 欄位預留未來真人版）
+    S.cells = ACT2.CELLS.map((c) => ({ ...c, owner: 'npc', suppress: ACT2.CELL_SUPPRESS_BASE }));
+    // 派遣中的舊任務作廢，成員回家
+    for (const id in S.jobs) { const mem = memberById(id); if (mem && mem.state === 'onjob') mem.state = 'idle'; }
+    S.jobs = {};
+    S.missions = [];
+    for (let i = 0; i < 4; i++) genMission();
+    S.raid = null;
+    S.lastRaidDay = 0;
+    Save.write(S);
+    emit('roster'); emit('missions'); emit('buildings');
+    emit('act2');
+  }
+
+  // 掃蕩結算：成功壓低目標據點鎮壓條（任務 code 帶 cellId）
+  function sweepSettle(job, ok) {
+    const cellId = job.m.cellId;
+    const cell = (S.cells || []).find((x) => x.id === cellId);
+    if (!cell) return;
+    if (ok) {
+      cell.suppress = Math.max(0, cell.suppress - rndInt(22, 34));
+      S.trust = clamp100(S.trust + ACT2.SWEEP_TRUST);
+      if (cell.suppress <= 0) {
+        S.cells = S.cells.filter((x) => x.id !== cellId);
+        S.police = clamp100(S.police + 12);
+        emit('toast', { icon: '🏁', text: `${cell.name} 端掉了！${cell.boss} 被移送——警方進度 +12` });
+        if (!S.cells.length) {
+          S.police = 100;
+          emit('toast', { icon: '🌅', text: '最後一個據點倒了——全台收網，塵埃落定' });
+        }
+        after();
+      } else {
+        emit('toast', { icon: '🔨', text: `${cell.name} 鎮壓條壓到 ${cell.suppress}%——再掃幾輪就能端掉` });
+      }
+    } else {
+      cell.suppress = Math.min(100, cell.suppress + 6);  // 打草驚蛇，據點回血
+      addSus(6);
+    }
+    emit('missions');
+  }
+
   // ===== 任務生成：在指定點附近撒（沒給就撒在園區總部附近）=====
   function genMission(center) {
     const c = center || HQ;
-    const total = MISSION_POOL.reduce((s, x) => s + x.w, 0);
-    let r = Math.random() * total, tk = 'scam';
-    for (const x of MISSION_POOL) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
-    const t = MISSION_TYPES[tk];
+    // V3.0：掃蕩撒在存活據點附近、蒐證撒在總部附近，其餘照舊撒園區附近
+    let c2 = c;
+    if (S.act2 && S.cells && S.cells.length) {
+      const cell = S.cells[(Math.random() * S.cells.length) | 0];
+      c2 = { lat: cell.lat, lng: cell.lng };
+    } else if (!S.act2 && S.police >= ACT2.UNLOCK_POLICE && Math.random() < 0.3) {
+      c2 = ACT2_HQ_POS;
+    }
+    // V3.0：任務池跟著劇幕走——二幕只有掃蕩；一幕後期摻蒐證（進度 ≥ 解鎖值）
+    let tk;
+    if (S.act2) {
+      tk = 'sweep';
+    } else if (S.police >= ACT2.UNLOCK_POLICE) {
+      const total = MISSION_POOL.reduce((s, x) => s + x.w, 0);
+      let r = Math.random() * (total + 25), pool = MISSION_POOL.concat([{ k: 'evidence', w: 25 }]);
+      tk = 'scam';
+      for (const x of pool) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
+    } else {
+      const total = MISSION_POOL.reduce((s, x) => s + x.w, 0);
+      let r = Math.random() * total; tk = 'scam';
+      for (const x of MISSION_POOL) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
+    }
+    const t = MISSION_TYPES[tk] || ACT2_MISSION_TYPES[tk];
     const heat = 0.35 + Math.random() * 0.65;
     // V2.6：任務點坐在路網上——從園區附近的路網取樣點挑一個（沒路網資料則退回隨機）
-    let lat = Math.min(TW.latR[1], Math.max(TW.latR[0], c.lat + (Math.random() - 0.5) * 0.07));
-    let lng = Math.min(TW.lngR[1], Math.max(TW.lngR[0], c.lng + (Math.random() - 0.5) * 0.09));
+    let lat = Math.min(TW.latR[1], Math.max(TW.latR[0], c2.lat + (Math.random() - 0.5) * 0.07));
+    let lng = Math.min(TW.lngR[1], Math.max(TW.lngR[0], c2.lng + (Math.random() - 0.5) * 0.09));
     if (typeof ROAD_NET !== 'undefined' && ROAD_NET.length) {
       const cand = [];
       for (const ch of ROAD_NET) {
         for (const p of ch) {
-          if (Math.abs(p[0] - c.lat) <= 0.035 && Math.abs(p[1] - c.lng) <= 0.045) cand.push(p);
+          if (Math.abs(p[0] - c2.lat) <= 0.035 && Math.abs(p[1] - c2.lng) <= 0.045) cand.push(p);
         }
       }
       if (cand.length) { const p = cand[(Math.random() * cand.length) | 0]; lat = p[0]; lng = p[1]; }
@@ -243,7 +353,14 @@ const Sim = (() => {
   }
 
   function successPay(m, t, job) {
-    if (m.type === 'intel') {
+    if (m.type === 'evidence') { onEvidenceSuccess(); }
+    else if (m.type === 'sweep') {
+      const pay = Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1));
+      S.money += pay;
+      sweepSettle(job, true);
+      emit('toast', { icon: '💵', text: `${m.code} 掃蕩完成，進帳 $${pay.toLocaleString()}` });
+    }
+    else if (m.type === 'intel') {
       S.police = clamp100(S.police + 12 + rndInt(0, 8));
       emit('toast', { icon: '🕵️', text: `${m.code} 情報交付成功！警方進度大幅推進` });
     } else {
@@ -257,7 +374,8 @@ const Sim = (() => {
   }
 
   function settleFail(m, mem, label) {
-    if (m.type === 'intel') { S.police = clamp100(S.police + 4); addSus(15); }
+    if (m.type === 'sweep') { sweepSettle({ m }, false); }
+    else if (m.type === 'intel') { S.police = clamp100(S.police + 4); addSus(15); }
     else { S.trust = clamp100(S.trust - 6); addSus(m.risk * 10); }
     if (failCapture(m)) {
       caught(mem);
@@ -418,7 +536,7 @@ const Sim = (() => {
     // 清晨六點結算伙食：水塔產出 → 全員開飯 → 斷糧懲罰
     if (S.min === 360) dailyFood();
 
-    // V2：20:00 風聲擲骰 → 02:00 深夜發動攻堅（暫停中鐘不走，不會跳過觸發點）
+    // V2：20:00 風聲擲骰 → 02:00 深夜發動（一幕＝警方攻堅；二幕＝詐團報復夜襲，同一套攻防）
     if (S.min === RAID.WARN_MIN) rollRaid();
     if (S.min === RAID.HIT_MIN && S.raid && S.raid.phase === 'warn') startRaid();
 
@@ -436,8 +554,8 @@ const Sim = (() => {
       emit('toast', { icon: '🪙', text: `挖開地板——藏的錢回來了（+${back.toLocaleString()}）` });
     }
 
-    // V2.5：貢金——18:00 預告、21:00 收（錢的長期出口）
-    if (S.day >= TRIBUTE.FROM_DAY) {
+    // V2.5：貢金——18:00 預告、21:00 收（錢的長期出口）；二幕反轉後不用再餵老闆
+    if (S.day >= TRIBUTE.FROM_DAY && !S.act2) {
       if (S.min === TRIBUTE.WARN_MIN) {
         emit('toast', { icon: '🏹', text: `今晚 21:00 上頭要收貢金 $${tributeCost().toLocaleString()}——帳上不夠就等著被教訓` });
       } else if (S.min === TRIBUTE.AT_MIN) {
@@ -489,8 +607,14 @@ const Sim = (() => {
   }
 
   function raidStrength() {
-    let s = RAID.STRENGTH_BASE + S.day * RAID.STRENGTH_DAY
-      + S.sus * RAID.STRENGTH_SUS + S.police * RAID.STRENGTH_POLICE;
+    let s;
+    if (S.act2) {
+      // 二幕：詐團報復——仇恨與剩餘據點撐強度（他們的「營收」也在燒）
+      s = 34 + S.day * 1.5 + S.sus * 0.35 + (S.cells || []).length * 7;
+    } else {
+      s = RAID.STRENGTH_BASE + S.day * RAID.STRENGTH_DAY
+        + S.sus * RAID.STRENGTH_SUS + S.police * RAID.STRENGTH_POLICE;
+    }
     if (S.buildings.fence) s *= RAID.FENCE_CUT;
     if (!S.raidCount) s *= RAID_FIRST_RELIEF;  // 第一次只是試探規模，打六折
     s *= 0.9 + Math.random() * 0.25;           // 每晚浮動 0.9~1.15×，不吃老本
@@ -523,8 +647,20 @@ const Sim = (() => {
 
   function rollRaid() {
     if (S.raid || S.ended || S.day <= RAID.GRACE_DAYS) return;
+    // 二幕：貢金沒了、警方不來了——改成詐團報復夜襲（仇恨＋剩餘據點越多越兇）
+    if (S.act2) {
+      let p = ACT2.RETALIATE_BASE + S.sus * ACT2.RETALIATE_SUS + (S.cells || []).length * ACT2.RETALIATE_PER_CELL;
+      if (S.lastRaidDay === S.day) p *= 0.5;
+      p = Math.max(0.08, Math.min(0.65, p));
+      if (Math.random() >= p) return;
+      S.raid = { phase: 'warn', strength: raidStrength(), kind: 'gang' };
+      Save.write(S);
+      emit('toast', { icon: '🐍', text: '線報：詐團知道你反水了——今晚可能有自己人來「清理門戶」！' });
+      emit('raidWarn');
+      return;
+    }
     if (Math.random() >= raidChance()) return;
-    S.raid = { phase: 'warn', strength: raidStrength() };
+    S.raid = { phase: 'warn', strength: raidStrength(), kind: 'police' };
     Save.write(S);
     emit('toast', { icon: '📡', text: '線報：今晚風聲很緊，警方可能在集結突擊——深夜前快做準備！' });
     emit('raidWarn');
@@ -619,8 +755,10 @@ const Sim = (() => {
 
   function checkEndings() {
     if (!S || S.ended) return;
+    // V3.0：結局語義跟著劇幕走——一幕：信任歸零滅口／懷疑滿收押／進度滿收網（勝）
+    // 二幕：信任歸零＝被警方放棄滅口／懷疑滿（詐團仇恨爆表）＝被清理門戶／進度滿＝全台收網（勝）
     if (S.trust <= 0) S.ended = 'silenced';
-    else if (S.sus >= 100) S.ended = 'jailed';
+    else if (S.sus >= 100) S.ended = S.act2 ? 'purged' : 'jailed';
     else if (S.police >= 100) S.ended = 'raid';
     if (S.ended) { paused = true; emit('ending', S.ended); }
   }
@@ -641,6 +779,10 @@ const Sim = (() => {
     if (!S.buriedRefund) S.buriedRefund = 0;
     if (!S.raidCount) S.raidCount = 0;
     if (!S.bribeCount) S.bribeCount = 0;
+    if (S.act2 === undefined) S.act2 = false;          // V3.0 第二幕欄位
+    if (!S.evidence) S.evidence = 0;
+    if (!S.hqRaidFail) S.hqRaidFail = 0;
+    if (S.cells === undefined) S.cells = null;
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
@@ -744,6 +886,8 @@ const Sim = (() => {
     assign, chooseEvent, bail, hire, buyGear, buyIntel, genMission, resolveRaid,
     build, buyFood, memberCap, buryCash, tributeCost, raidBribeCost,
     parkRadius, policeRadius, zoneOf, parkPetals, policePetals,
+    hqRaidReady, resolveHqRaid, onEvidenceSuccess, sweepSettle, hqRaidFailCheck: () => S.hqRaidFail,
+    act2HqPos: ACT2_HQ_POS,
     memberById, bailCost,
     state: () => S,
     isPaused: () => paused,

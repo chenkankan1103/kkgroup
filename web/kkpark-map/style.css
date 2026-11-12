@@ -319,6 +319,27 @@ button.pick:hover { border-color: var(--pink); }
 /* 瓣的邊緣用極淡描邊暗示範圍（不畫虛線圈，讓疊色自己說話） */
 .turf-park:last-of-type, .turf-police:last-of-type { stroke: rgba(255, 255, 255, 0.04); stroke-width: 1; }
 
+/* ===== V3.0：第二幕——詐團總部／據點標記與紅瓣 ===== */
+.mk-hqact {
+  display: flex; align-items: center; gap: 4px; font-size: 18px;
+  background: rgba(18, 23, 34, 0.95); border: 1px solid var(--red);
+  border-radius: 8px; padding: 3px 9px; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 0 12px rgba(255, 77, 109, 0.5);
+  animation: hotPulse 1.6s ease-in-out infinite;
+}
+.mk-hqact span { font-size: 11px; color: var(--red); font-weight: 700; }
+.mk-cell {
+  display: flex; align-items: center; gap: 4px; font-size: 15px;
+  background: rgba(18, 23, 34, 0.95); border: 1px solid var(--red);
+  border-radius: 8px; padding: 2px 8px; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 0 10px rgba(255, 77, 109, 0.35);
+}
+.mk-cell span { font-size: 11px; color: var(--red); }
+.turf-cell {
+  fill: rgba(255, 77, 109, 0.09);
+  stroke: rgba(255, 77, 109, 0.4); stroke-width: 1; stroke-dasharray: 4 5;
+}
+
 /* ===== V2.5：藏錢／貢金 chip ===== */
 #hudBury {
   pointer-events: auto; cursor: pointer;

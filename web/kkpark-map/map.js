@@ -3,7 +3,7 @@
 
 const GameMap = (() => {
   let map = null;
-  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf;
+  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, mAct2;
   const cb = {}; // 對外回呼：missionClick
   const jobMarkers = {}; // memId -> marker（不重建，才能用 CSS transition 平滑走路）
 
@@ -41,6 +41,7 @@ const GameMap = (() => {
     mBuild = L.layerGroup().addTo(map);
     mRaid = L.layerGroup().addTo(map);
     mTurf = L.layerGroup().addTo(map);
+    mAct2 = L.layerGroup().addTo(map);
 
     L.marker([HQ.lat, HQ.lng], {
       icon: divIcon('<div class="mk-hq">🏢<span>園區總部</span></div>', [76, 26]),
@@ -152,8 +153,9 @@ const GameMap = (() => {
     mMissions.clearLayers();
     for (const m of missions) {
       const hot = m.risk >= 0.5 ? ' hot' : '';
+      const mt = MISSION_TYPES[m.type] || ACT2_MISSION_TYPES[m.type] || { icon: '❓' };
       const mk = L.marker([m.lat, m.lng], {
-        icon: divIcon(`<div class="mk-mis${hot}">${MISSION_TYPES[m.type].icon}<span>${m.code}</span></div>`, [64, 26]),
+        icon: divIcon(`<div class="mk-mis${hot}">${mt.icon}<span>${m.code}</span></div>`, [64, 26]),
       });
       mk.on('click', () => { if (cb.missionClick) cb.missionClick(m); });
       mk.addTo(mMissions);
@@ -242,6 +244,43 @@ const GameMap = (() => {
     return circles;
   }
 
+  // ===== V3.0：第二幕——詐團總部標記（一幕後期）與 NPC 據點紅瓣（二幕） =====
+  let hqMarker = null, cellMarkers = {};
+  function renderAct2(S) {
+    if (!map) return;
+    const hqPos = Sim.act2HqPos;
+    // 總部：一幕、進度解鎖後出現；反轉後消失
+    const showHq = !S.act2 && S.police >= ACT2.UNLOCK_POLICE;
+    if (showHq && !hqMarker) {
+      hqMarker = L.marker([hqPos.lat, hqPos.lng], {
+        icon: divIcon('<div class="mk-hqact">🏚️<span>詐團總部</span></div>', [86, 26]),
+      }).addTo(mAct2);
+      hqMarker.on('click', () => { if (cb.hqClick) cb.hqClick(); });
+    } else if (!showHq && hqMarker) {
+      mAct2.removeLayer(hqMarker); hqMarker = null;
+    }
+    // 據點：二幕才存在——紅瓣（跟勢力瓣同一套淡色語言，但更濃）＋標記
+    const cells = S.act2 ? (S.cells || []) : [];
+    for (const id in cellMarkers) {
+      if (!cells.some((c) => c.id === id)) {
+        mAct2.removeLayer(cellMarkers[id].mk);
+        mAct2.removeLayer(cellMarkers[id].petal);
+        delete cellMarkers[id];
+      }
+    }
+    for (const c of cells) {
+      if (!cellMarkers[c.id]) {
+        const petal = L.circle([c.lat, c.lng], { radius: 1, className: 'turf-cell', interactive: false }).addTo(mAct2);
+        const mk = L.marker([c.lat, c.lng], {
+          icon: divIcon(`<div class="mk-cell">🏭<span>${c.name}·${c.boss}</span></div>`, [120, 26]),
+        }).addTo(mAct2);
+        mk.on('click', () => { if (cb.cellClick) cb.cellClick(c); });
+        cellMarkers[c.id] = { mk, petal };
+      }
+      cellMarkers[c.id].petal.setRadius(TURF.POLICE_BASE * 111320 * 0.9);
+    }
+  }
+
   // ===== V2：攻堅集結——警車紅藍閃爍從四面八方圍向總部；結算後撤走 =====
   // 放獨立圖層，不會被 refreshPolice 的 clearLayers() 掃掉
   let raidCars = [];
@@ -293,5 +332,5 @@ const GameMap = (() => {
     return mPolice ? mPolice.getLayers().map((l) => l.getLatLng()) : [];
   }
 
-  return { init, refreshPolice, tickCops, renderTurf, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, cb };
+  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, cb };
 })();
