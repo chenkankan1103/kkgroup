@@ -3,29 +3,11 @@
 
 const GameMap = (() => {
   let map = null;
-  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid;
+  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, parkCircle, policeCircle;
   const cb = {}; // 對外回呼：missionClick
   const jobMarkers = {}; // memId -> marker（不重建，才能用 CSS transition 平滑走路）
 
-  // 台灣本島粗略輪廓（只拿來擋掉海面上的警察點）
-  const TW_POLY = [
-    [25.30, 121.55], [25.05, 121.90], [24.90, 121.82], [24.60, 121.85], [24.20, 121.75],
-    [23.85, 121.60], [23.50, 121.50], [23.10, 121.65], [22.85, 121.35], [22.60, 121.00],
-    [22.40, 120.70], [22.20, 120.35], [22.00, 120.15], [21.95, 120.10], [22.25, 120.05],
-    [22.55, 120.20], [22.80, 120.25], [23.10, 120.05], [23.35, 120.10], [23.65, 120.05],
-    [23.85, 120.15], [24.15, 120.35], [24.45, 120.55], [24.75, 120.75],
-    [25.00, 121.00], [25.15, 121.25],
-  ];
-  function inTW(lat, lng) {
-    let inside = false;
-    for (let i = 0, j = TW_POLY.length - 1; i < TW_POLY.length; j = i++) {
-      const yi = TW_POLY[i][0], xi = TW_POLY[i][1];
-      const yj = TW_POLY[j][0], xj = TW_POLY[j][1];
-      if (((yi > lat) !== (yj > lat)) && (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi)) inside = !inside;
-    }
-    return inside;
-  }
-
+  // 台灣本島粗略輪廓與擋海判斷已退役——警車改坐真實路網（roads.js），山裡海上自然沒有車
   // 決定性偽隨機：同一格子、同一時段 → 每個玩家看到同一批警察（零後端）
   function hash3(x, y, salt) {
     let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(salt | 0, 974634211)) | 0;
@@ -58,6 +40,7 @@ const GameMap = (() => {
     mJobs = L.layerGroup().addTo(map);
     mBuild = L.layerGroup().addTo(map);
     mRaid = L.layerGroup().addTo(map);
+    mTurf = L.layerGroup().addTo(map);
 
     L.marker([HQ.lat, HQ.lng], {
       icon: divIcon('<div class="mk-hq">🏢<span>園區總部</span></div>', [76, 26]),
@@ -67,15 +50,55 @@ const GameMap = (() => {
     refreshPolice();
   }
 
-  // ===== 警察 NPC：格子當種子，zoom ≥ 12 才現身 =====
-  // 不跑位的關鍵：位置與存在都由固定 400m 格決定，時段只調整數量門檻——
-  // 同一格的車永遠停在同一點，深夜變少、白天變多，只會出現/消失，不會瞬移。
-  // 低倍率只顯示固定格點的子集（zoom 12 每 4 格取 1、13 每 2 格取 1、14+ 全顯）。
+  // ===== 警察 NPC：坐真實路網（roads.js 的 ROAD_NET 路段鏈），只在「角色附近」現身 =====
+  // 感知閘門：只有總部、派遣中的成員、任務釘（±2km）周邊的警力「可知」——臥底不會
+  // 知道全台警力部署，其他地區是未知。格子的存在由雜湊門檻（時段密度）決定、格內
+  // 從路網點挑一台車；車沿所屬路段決定性巡邏（位置是 gameMin 的純函數，暫停即凍結，
+  // 跨縮放、跨玩家一致）。zoom ≥ 12 才顯示，低倍率只取格子子集（12 每 4 格、13 每 2 格）。
+  let roadIdx = null;
+  function buildRoadIndex() {
+    roadIdx = new Map();
+    ROAD_NET.forEach((chain, ci) => {
+      for (let i = 0; i < chain.length; i++) {
+        const p = chain[i];
+        const key = Math.floor(p[1] / CELL) + ',' + Math.floor(p[0] / CELL);  // lngIdx,latIdx
+        let arr = roadIdx.get(key);
+        if (!arr) roadIdx.set(key, (arr = []));
+        arr.push({ c: ci, i });
+      }
+    });
+  }
+
+  const SENSE_RAD = 0.018;  // 感知半徑（度）≈ 2km
+  const SEG_MIN = 25;       // 每個路段取样間隔滑 25 遊戲分鐘（=25 真實秒，約 50km/h）
+  let copsLive = [];        // 可視警車：{ mk, ci, i0, dir }
+
+  // 車在路段上的決定性位置：seg = i0 + dir × (gameMin / SEG_MIN)，三角波折返＋線性內插
+  function copPos(ci, i0, dir, atMin) {
+    const chain = ROAD_NET[ci];
+    const L = chain.length;
+    const span = Math.max(1, (L - 1) * 2);
+    let s = (i0 + dir * (atMin / SEG_MIN)) % span;
+    if (s < 0) s += span;
+    const u = s < L - 1 ? s : span - s;
+    const i = Math.min(L - 2, Math.floor(u));
+    const f = u - i;
+    return [chain[i][0] + (chain[i + 1][0] - chain[i][0]) * f, chain[i][1] + (chain[i + 1][1] - chain[i][1]) * f];
+  }
+
   function refreshPolice() {
     if (!map) return;
     mPolice.clearLayers();
+    copsLive = [];
     const z = map.getZoom();
     if (z < 12) return;
+    if (!roadIdx) { if (typeof ROAD_NET === 'undefined' || !ROAD_NET.length) return; buildRoadIndex(); }
+    const S = Sim.state();
+    const anch = [HQ];
+    if (S) {
+      for (const id in S.jobs) if (S.jobs[id].pos) anch.push(S.jobs[id].pos);
+      for (const m of S.missions) anch.push(m);
+    }
     const step = z >= 14 ? 1 : z === 13 ? 2 : 4;
     const b = map.getBounds();
     const x0 = Math.floor(b.getWest() / CELL) - 1, x1 = Math.ceil(b.getEast() / CELL) + 1;
@@ -86,17 +109,40 @@ const GameMap = (() => {
       if (cy % step !== 0) continue;
       for (let cx = x0; cx <= x1 && n < 450; cx++) {
         if (cx % step !== 0) continue;
-        if (!inTW(cy * CELL, cx * CELL)) continue;
+        // 感知閘門：錨點附近才顯示——你不是全知，只有自己人周邊的警力看得到
+        let near = false;
+        for (const a of anch) {
+          if (Math.abs(cy * CELL - a.lat) < SENSE_RAD && Math.abs(cx * CELL - a.lng) < SENSE_RAD) { near = true; break; }
+        }
+        if (!near) continue;
+        const pts = roadIdx.get(cx + ',' + cy);
+        if (!pts) continue;
+        // V2.7：勢力圈內密度不同——警方圈車多、我方地盤車少（視覺上圈內圈外不一樣）
+        const cellLat = cy * CELL, cellLng = cx * CELL;
+        let dens2 = dens;
+        if (Math.hypot(cellLng - TURF.POLICE_CENTER.lng, cellLat - TURF.POLICE_CENTER.lat) <= Sim.policeRadius()) dens2 *= TURF.COP_BOOST_POLICE;
+        else if (Math.hypot(cellLng - HQ.lng, cellLat - HQ.lat) <= Sim.parkRadius()) dens2 *= TURF.COP_SUPPRESS_PARK;
         for (let k = 0; k < 2; k++) {
-          if (hash3(cx, cy, 7 + k) < dens * 0.45) {
-            const lat2 = (cy + hash3(cx, cy * 3 + k, 11)) * CELL;
-            const lng2 = (cx + hash3(cx * 3 + k, cy, 23)) * CELL;
-            if (!isFinite(lat2) || !isFinite(lng2)) continue;  // 動畫邊界狀態下 bounds 可能短暫失準
-            L.marker([lat2, lng2], { icon: divIcon('🚔', [20, 20], 'cop-icon'), interactive: false }).addTo(mPolice);
+          if (hash3(cx, cy, 7 + k) < dens2 * 0.45) {
+            const e = pts[(hash3(cx, cy * 3 + k, 11) * pts.length) | 0];
+            const dir = hash3(cx * 3 + k, cy, 29) < 0.5 ? 1 : -1;
+            const t = Sim.gameMin();
+            const mk = L.marker(copPos(e.c, e.i, dir, t), { icon: divIcon('🚔', [20, 20], 'cop-icon'), interactive: false }).addTo(mPolice);
+            copsLive.push({ mk, ci: e.c, i0: e.i, dir });
             n++;
           }
         }
       }
+    }
+  }
+
+  // 每 5 遊戲分鐘（5 真實秒）把可視警車的目標推進到 5 分鐘後的位置，CSS 補間滑過去
+  function tickCops() {
+    if (!copsLive.length) return;
+    const t = Sim.gameMin();
+    if (t % 5 !== 0) return;
+    for (const c of copsLive) {
+      try { c.mk.setLatLng(copPos(c.ci, c.i0, c.dir, t + 5)); } catch (e) {}
     }
   }
 
@@ -166,6 +212,22 @@ const GameMap = (() => {
     });
   }
 
+  // ===== V2.7：勢力範圍圈——綠圈＝詐團地盤（信任撐大）、紅圈＝警方勢力（進度/懷疑外壓） =====
+  // 半徑只在變動超過 20 公尺時重設，避免每秒重繪
+  function renderTurf() {
+    if (!map) return;
+    if (!parkCircle) {
+      parkCircle = L.circle([HQ.lat, HQ.lng], { radius: 1, className: 'turf-park', interactive: false }).addTo(mTurf);
+      policeCircle = L.circle([TURF.POLICE_CENTER.lat, TURF.POLICE_CENTER.lng], { radius: 1, className: 'turf-police', interactive: false }).addTo(mTurf);
+      parkCircle._r = -1;
+      policeCircle._r = -1;
+    }
+    const pr = Sim.parkRadius() * 111320;
+    const qr = Sim.policeRadius() * 111320;
+    if (Math.abs(pr - parkCircle._r) > 20) { parkCircle.setRadius(pr); parkCircle._r = pr; }
+    if (Math.abs(qr - policeCircle._r) > 20) { policeCircle.setRadius(qr); policeCircle._r = qr; }
+  }
+
   // ===== V2：攻堅集結——警車紅藍閃爍從四面八方圍向總部；結算後撤走 =====
   // 放獨立圖層，不會被 refreshPolice 的 clearLayers() 掃掉
   let raidCars = [];
@@ -195,7 +257,17 @@ const GameMap = (() => {
     if (!map) return;
     // 沒指定 zoom → 至少拉近到 13（看任務）；有指定就用指定的（進場用 12 看全區）
     const target = z !== undefined ? z : Math.max(map.getZoom(), 13);
-    map.flyTo([lat, lng], Math.max(target, 8), { duration: 0.8 });
+    // 地圖容器剛建好、尺寸未就緒時 flyTo 內部 pointToLatLng 會算出 NaN——退回 setView
+    const size = map.getSize();
+    if (!size.x || !size.y || !isFinite(size.x) || !isFinite(size.y)) {
+      map.setView([lat, lng], Math.max(target, 8));
+      return;
+    }
+    try {
+      map.flyTo([lat, lng], Math.max(target, 8), { duration: 0.8 });
+    } catch (e) {
+      map.setView([lat, lng], Math.max(target, 8));
+    }
   }
   function getCenter() {
     if (!map) return { lat: HQ.lat, lng: HQ.lng };
@@ -207,5 +279,5 @@ const GameMap = (() => {
     return mPolice ? mPolice.getLayers().map((l) => l.getLatLng()) : [];
   }
 
-  return { init, refreshPolice, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, cb };
+  return { init, refreshPolice, tickCops, renderTurf, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, cb };
 })();

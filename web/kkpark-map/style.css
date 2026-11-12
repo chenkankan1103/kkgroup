@@ -37,7 +37,13 @@ body {
 
 /* ===== 地圖標記 ===== */
 .mk-plain { background: none; border: none; }
-.cop-icon { font-size: 17px; opacity: 0.9; filter: drop-shadow(0 0 4px rgba(90, 167, 255, 0.8)); pointer-events: none; }
+/* 巡邏警車：tickCops 每 5 秒 setLatLng 一次，CSS 補間讓車沿路滑行；縮放動畫中暫停 */
+.cop-icon {
+  font-size: 17px; opacity: 0.9;
+  filter: drop-shadow(0 0 4px rgba(90, 167, 255, 0.8)); pointer-events: none;
+  transition: transform 5s linear;
+}
+.leaflet-zoom-anim .cop-icon { transition: none; }
 
 .mk-mis {
   display: flex; align-items: center; gap: 4px;
@@ -300,6 +306,16 @@ button.pick:hover { border-color: var(--pink); }
 
 /* ===== V2 夜間攻堅 ===== */
 #hudRaid { color: var(--red); border-color: var(--red); animation: foodBlink 1.1s ease-in-out infinite; }
+
+/* ===== V2.7：勢力範圍圈（虛線圈，綠＝詐團地盤、紅＝警方勢力） ===== */
+.turf-park {
+  fill: rgba(77, 255, 157, 0.06);
+  stroke: rgba(77, 255, 157, 0.55); stroke-width: 1.5; stroke-dasharray: 7 7;
+}
+.turf-police {
+  fill: rgba(255, 77, 109, 0.06);
+  stroke: rgba(255, 77, 109, 0.6); stroke-width: 1.5; stroke-dasharray: 7 7;
+}
 
 /* ===== V2.5：藏錢／貢金 chip ===== */
 #hudBury {

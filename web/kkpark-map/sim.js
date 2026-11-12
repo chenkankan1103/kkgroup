@@ -50,6 +50,18 @@ const Sim = (() => {
     for (let i = 0; i < START.missions; i++) genMission();
   }
 
+  // ===== V2.7：勢力範圍——半徑隨信任／警方進度／懷疑進退，任務落在圈內有修正 =====
+  function parkRadius() { return TURF.PARK_BASE + S.trust * TURF.PARK_TRUST; }
+  function policeRadius() { return TURF.POLICE_BASE + S.police * TURF.POLICE_PROG + S.sus * TURF.POLICE_SUS; }
+  function zoneOf(lat, lng) {
+    const inPark = Math.hypot(lng - HQ.lng, lat - HQ.lat) <= parkRadius();
+    const inPolice = Math.hypot(lng - TURF.POLICE_CENTER.lng, lat - TURF.POLICE_CENTER.lat) <= policeRadius();
+    if (inPark && inPolice) return 'contested';
+    if (inPark) return 'park';
+    if (inPolice) return 'police';
+    return 'none';
+  }
+
   // ===== 任務生成：在指定點附近撒（沒給就撒在園區總部附近）=====
   function genMission(center) {
     const c = center || HQ;
@@ -58,18 +70,32 @@ const Sim = (() => {
     for (const x of MISSION_POOL) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
     const t = MISSION_TYPES[tk];
     const heat = 0.35 + Math.random() * 0.65;
-    const lat = Math.min(TW.latR[1], Math.max(TW.latR[0], c.lat + (Math.random() - 0.5) * 0.07));
-    const lng = Math.min(TW.lngR[1], Math.max(TW.lngR[0], c.lng + (Math.random() - 0.5) * 0.09));
+    // V2.6：任務點坐在路網上——從園區附近的路網取樣點挑一個（沒路網資料則退回隨機）
+    let lat = Math.min(TW.latR[1], Math.max(TW.latR[0], c.lat + (Math.random() - 0.5) * 0.07));
+    let lng = Math.min(TW.lngR[1], Math.max(TW.lngR[0], c.lng + (Math.random() - 0.5) * 0.09));
+    if (typeof ROAD_NET !== 'undefined' && ROAD_NET.length) {
+      const cand = [];
+      for (const ch of ROAD_NET) {
+        for (const p of ch) {
+          if (Math.abs(p[0] - c.lat) <= 0.035 && Math.abs(p[1] - c.lng) <= 0.045) cand.push(p);
+        }
+      }
+      if (cand.length) { const p = cand[(Math.random() * cand.length) | 0]; lat = p[0]; lng = p[1]; }
+    }
     // V2.5：距離參與決策——遠的錢多、風險也高，近的快但薄
     // 生成範圍 lat ±0.035 / lng ±0.045（最大 dist ≈ 0.057），門檻與倍率對齊這個範圍
     const dist = Math.hypot(lng - HQ.lng, lat - HQ.lat);
     const distMult = 0.85 + Math.min(1, dist / 0.055) * 0.55;
+    // V2.7：落在誰的圈內，風險與報酬就不同（地盤安穩、警方圈高危高報酬）
+    const zone = zoneOf(lat, lng);
+    const zm = TURF.ZONES[zone];
     const m = {
       id: 'j' + (S.nextMid++), type: tk,
       lat, lng,
-      pay: Math.round(rndInt(t.pay[0], t.pay[1]) * distMult),
+      pay: Math.round(rndInt(t.pay[0], t.pay[1]) * distMult * zm.pay),
       durMin: rndInt(t.dur[0], t.dur[1]),
-      risk: Math.min(0.9, t.risk * (0.6 + heat * 0.8) + dist * 1.4),
+      risk: Math.min(0.9, (t.risk * (0.6 + heat * 0.8) + dist * 1.4) * zm.risk),
+      zone,
       heat,
       distTier: dist < 0.02 ? '近' : dist < 0.04 ? '中' : '遠',
       expireMin: gameMin() + rndInt(MISSION_TTL[0], MISSION_TTL[1]),
@@ -647,6 +673,7 @@ const Sim = (() => {
     on, newGame, load, restart, tick,
     assign, chooseEvent, bail, hire, buyGear, buyIntel, genMission, resolveRaid,
     build, buyFood, memberCap, buryCash, tributeCost, raidBribeCost,
+    parkRadius, policeRadius, zoneOf,
     memberById, bailCost,
     state: () => S,
     isPaused: () => paused,

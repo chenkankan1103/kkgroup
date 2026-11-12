@@ -161,6 +161,22 @@ const TW = {
   latR: [21.9, 25.3], lngR: [119.6, 121.9], // 任務生成範圍
 };
 
+// ===== V2.7：勢力範圍圈（警方 vs 詐團，隨信任／進度／懷疑進退） =====
+// 詐團圈以園區為圓心：信任越高地盤越大；警方圈以分局為圓心：警方進度與懷疑越高
+// 越往外壓。半徑單位是「度」（換算公尺 ×111320）。任務落在哪個圈內，風險與報酬就不同。
+const TURF = {
+  POLICE_CENTER: { lat: HQ.lat + 0.026, lng: HQ.lng + 0.024 },  // 分局據點（東北 ~3.5km）
+  PARK_BASE: 0.010, PARK_TRUST: 0.0003,      // 園區圈半徑 = 0.010 + 信任 × 0.0003（信任 60 → 2.8km）
+  POLICE_BASE: 0.010, POLICE_PROG: 0.00025, POLICE_SUS: 0.00012, // 警方圈 = base + 進度/懷疑加成（滿進度恰好罩住園區）
+  COP_BOOST_POLICE: 1.4, COP_SUPPRESS_PARK: 0.65,  // 圈內巡邏車密度修正
+  ZONES: {
+    park:      { risk: 0.85, pay: 0.90, name: '🏴 我方地盤', note: '安穩但油水薄' },
+    police:    { risk: 1.35, pay: 1.25, name: '🚨 警方勢力', note: '虎口拔牙，報酬也肥' },
+    contested: { risk: 1.15, pay: 1.10, name: '⚔️ 交戰區', note: '兩邊都在搶' },
+    none:      { risk: 1.00, pay: 1.05, name: '🌑 無人地帶', note: '自由但沒保護' },
+  },
+};
+
 function rollStat() { return 3 + Math.floor(Math.random() * 6); } // 3-8
 function rndInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
 function clamp100(v) { return Math.max(0, Math.min(100, v)); }

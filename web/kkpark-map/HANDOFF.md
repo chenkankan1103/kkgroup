@@ -18,15 +18,16 @@
 
 ### 已完成系統（全部瀏覽器實測通過、零 console 錯誤）
 
-- **地圖**：Leaflet＋Esri World Dark Gray 瓦片（免 key、maxZoom 16）；決定性偽隨機警車——400m 固定格（CELL=0.004°）＋hash3 雜湊，位置與存在都由格子決定、時段只調數量門檻，跨縮放不跑位（z12 每4格/z13 每2格/z14+ 全顯、cap 450、zoom<12 不顯示、26 點 ray cast 擋海）
+- **地圖**：Leaflet＋Esri World Dark Gray 瓦片（免 key、maxZoom 16）；**警車坐真實路網＋感知迷霧＋巡邏移動**（V2.6）——`roads.js` 存台灣路網**路段鏈** ROAD_NET（OSM/Overpass 每 ~350m 一取樣點、21,425 條路段 6.9 萬點、取樣範圍北緯 24.15 以南、ODbL 授權標註在頁尾；**1.3MB 純前端靜態檔**）。三層設計：①**感知閘門**——只有總部、派遣中成員、任務釘 ±2km（SENSE_RAD=0.018°）內的警力可見，其他地區是未知（臥底不知道全台警力部署，拉到台北=0 台車）②格子存在由 hash3 門檻（時段密度）決定、格內從路網點挑車 ③**決定性巡邏**——車沿所屬路段鏈三角波折返，位置是 gameMin 的純函數（SEG_MIN=25 遊戲分鐘/段 ≈50km/h，暫停即凍結），ui.onTick 每秒呼叫 tickCops、內部 5 分鐘一批 setLatLng＋CSS transition 5s 補間。沒 roads.js 時警車不顯示、任務退回隨機點（fallback 已驗證）
+- **V2.7 勢力範圍圈**：🟢 綠圈＝詐團地盤（圓心 HQ，半徑＝0.010＋信任×0.0003 度）、🔴 紅圈＝警方勢力（圓心東北 ~3.5km 的「分局」，半徑＝0.010＋警方進度×0.00025＋懷疑×0.00012——滿進度恰好罩住園區）。半徑隨數值即時進退（renderTurf 變動 >20m 才重繪）；任務生成時依落點套 zone 修正——我方地盤 risk×0.85/pay×0.9、警方圈 risk×1.35/pay×1.25、交戰區 1.15/1.10、無人地帶 1.0/1.05；巡邏車密度警方圈 ×1.4、我方圈 ×0.65；任務面板顯示 🗺️ 勢力行。純函數無新存檔欄位
 - **時鐘**：1 真實秒＝1 遊戲分鐘；setInterval(1000) 驅動 Sim.tick()；gameMin = day*1440+min
-- **任務派遣**：快跑（看戲＋事件）/大活（×4 時長 ×2.2 錢、離線照跑 endRealMs）；事件抉擇（4 種 EVENTS）；看守所 JAIL_MIN[3,8]＋保釋（$20000 起跳）；風險/熱度/賞金隨機
+- **任務派遣**：快跑（看戲＋事件）/大活（×4 時長 ×2.2 錢、離線照跑 endRealMs）；事件抉擇（6 種 EVENTS）；看守所 JAIL_MIN[3,8]＋保釋（$20000 起跳）；**任務點坐路網**（genMission 從 HQ 附近路網點挑一個）＋距離/時效/勢力三層修正；風險/熱度/賞金隨機
 - **V1.5 走路動畫**：job 三階段 `leg: out → work → back`；每遊戲分鐘移動 MOVE_DEG=0.0028°（贓車 ×1.9）；marker 持久化＋CSS transition 1s 補間；回 HQ 才 idle
 - **V1.5 伙食**：開場 25；每天 06:00 全員開飯（每人 2、廚房→1）；水塔 +4/天；成功任務 +1；$3000 買 +10；斷糧 trust −5＋toast；HUD chip ≤3 紅閃
 - **V1.5 園區建設**：5 棟 BUILDINGS（水塔/廚房/圍籬/發電機/工寮）——商店購買、buildQueue 施工（buildMin 遊戲分鐘=真實秒）、HQ 旁 B_SPOTS 圖示（工地 ⚒️ 灰框→完工綠框）；圍籬＝夜間警力 −25%、發電機＝報酬 ×1.15、工寮＝成員上限 +3（基礎 6）
 - **V2 夜間攻堅**：20:00 擲骰出風聲預警（機率＝基礎 10%＋天數遞增封頂 30%＋懷疑×25%＋警方進度×15%；day≤3 教學期免戰、當日剛被打過機率減半）→ 02:00 深夜發動：暫停＋決策卡＋7 台紅藍閃爍警車從四周圍向 HQ（獨立 mRaid 圖層，不被巡邏刷新掃掉，CSS transition 1.8s 補間）。四策略（一張總策略卡、重傷不致死）：**死守迎戰** def＝人數×8＋平均戰力×2，勝 trust+6/sus−10，敗抄錢 25% cap 3 萬＋逮 1-2 人進看守所＋隨機拆一棟建築＋trust−8/sus+10；**全員躲藏** def＝人數×4＋圍籬 15，無人被抓、敗抄 15%；**棄車誘敵** 犧牲贓車、判定門檻 ×0.85，敗抄 10% 無人被抓；**花錢消災** $20000 必勝 sus−5。圍籬額外壓攻堅強度 −20%；強度＝40＋天數×2＋sus×0.25＋police×0.3；只有 idle 成員參與（出勤中的躲過這劫）。`S.raid`/`S.lastRaidDay` 存檔跨重載恢復（warn→chip 亮、fight→重彈卡＋保持暫停）
 - **存檔**：v2 格式＋v1→v2 自動遷移（food/buildings/buildQueue 補預設、舊 job 補 leg='work'）；V2 補 raid/lastRaidDay、V2.5 補 buried/buriedRefund/raidCount/bribeCount 與任務 expireMin（舊檔向後相容）
-- **教學**：`kkpark_map_tut_v1` flag、八步 howto（❓ 可重開；第 7-8 條夜間攻堅與貢金/時效）
+- **教學**：`kkpark_map_tut_v1` flag、九步 howto（❓ 可重開；第 7-9 條夜間攻堅、貢金/時效、勢力圈）
 - **V2.5 好玩度**：①藏錢——風聲期間 HUD 可「🪙 藏一半現金」（當下離帳，被抄/貢金都碰不到，隔天 08:00 挖回磨損一成 BURY_FEE）②貢金——day3 起每天 21:00 上頭抽成（$6,000＋每日 $2,500、cap $45,000；18:00 預告 toast＋HUD chip、繳夠 trust+2、繳不出 trust−12 録零）③任務時效——expireMin 6~12 遊戲小時、過期自動熄掉（tick prune＋emit missions）④任務距離——distTier 近/中/遠（門檻 0.02/0.04°，生成範圍 max ≈0.057）、遠的 payMult 至 1.4×／risk +dist×1.4，面板顯示距離與時限 ⑤攻堅平衡——首次突擊強度 ×0.6（RAID_FIRST_RELIEF）＋卡片首戰提示、每晚強度浮動 ×0.9~1.15、花錢消災階梯 $20,000→$30,000→…cap $50,000（raidBribeCost）⑥新事件卡——🕵️ 線人密會（kind police：police+6/trust−4）、🍺 自己人鬧酒（kind pay：花錢/立威）
 - **結局**：信任歸零滅口 / 懷疑滿收押（敗）、警方進度 100 全台收網（勝）
 
@@ -49,6 +50,9 @@
 
 - **Browser pane 背景時 setInterval 凍結**——驗證一律用 preview_eval 手動呼叫 Sim.tick()；真人前景玩時正常
 - **preview_click 座標偏移 78px**——一律用 eval `element.click()`
+- **console log 跨重載累計**（跟著 server 生命週期）——看到舊錯誤先做標記實驗（throw TEST-MARKER 再重載）判斷是新是舊，別直接當現行 bug 追
+- **Overpass API**：overpass-api.de 會 406/504，用鏡像 `overpass.kumi.systems`＋POST form-encoded＋browser UA；台灣全境 tertiary+ 查詢太大會 504，切成南北兩半（lat 23.75 分界）各抓；regex 查詢伺服器算很慢，精確值 `["highway"="primary"]` 快得多；**北緯 24.15 以北尚未取樣**（感知閘門下遊戲用不到，要補等伺服器穩定再抓北半）
+- **python http.server 快取坑**：改了 JS 後瀏覽器可能吃到 disk cache（舊檔）——重啟 server 也沒用，要**換 port 開新 origin**（launch.json 已備 8898 的 kkpark-map-b）或DevTools 停用快取
 - Bash 工具故障（rtk hook 已於 2026-11-11 移除，新 session 生效）→ 過渡期用 mcp__terminal__run_in_terminal（PowerShell）；中文 commit message 用 `git commit -F <檔案>`
 - MCP allow 已補齊 user settings.json（classifier timeout 不再擋工具）
 

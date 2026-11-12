@@ -85,6 +85,8 @@ const UI = (() => {
     $('fillSus').style.width = S.sus + '%';
     if (S.min % 60 === 0) GameMap.refreshPolice();
     GameMap.renderJobs(S.jobs, S.members);
+    GameMap.tickCops();  // V2.6：警車巡邏滑行（內部自己節流到每 5 遊戲分鐘）
+    GameMap.renderTurf();  // V2.7：勢力圈半徑跟著信任／進度走（變動才重繪）
     // V2：風聲預警 chip（發動後由攻堅卡接手）
     $('hudRaid').classList.toggle('hidden', !(S.raid && S.raid.phase === 'warn'));
     // V2.5：藏錢 chip（風聲期間可藏一半現金防抄；藏了顯示凍結額度）
@@ -216,6 +218,7 @@ const UI = (() => {
         <div>🔥 熱度 <b>${m.heat > 0.75 ? '高' : m.heat > 0.45 ? '中' : '低'}</b></div>
         <div>🛵 距離 <b>${m.distTier || '中'}</b>（遠＝錢多）</div>
         <div>⏳ 時限 <b>${m.expireMin ? Math.max(0, Math.round(m.expireMin - Sim.gameMin())) + ' 分' : '不限'}</b></div>
+        <div>🗺️ 勢力 <b>${(TURF.ZONES[m.zone] || TURF.ZONES.none).name}</b></div>
       </div>
       <div class="mode-row">
         <button class="mode ${curMode === 'short' ? 'on' : ''}" data-mode="short">⚡ 快跑<small>開著看戲 · 會跳事件</small></button>
