@@ -6,6 +6,7 @@ const UI = (() => {
 
   /* ===== 玩法教學（❓ 可隨時重開；看過一次就不自動跳） ===== */
   const TUT_KEY = 'kkpark_map_tut_v1';
+  function setMyDiscordIdIfEmpty(id) { if (id && !Avatar.myDiscordId()) Avatar.setMyDiscordId(id); }
   function hasSeenHow() { try { return !!localStorage.getItem(TUT_KEY); } catch (e) { return true; } }
   function showHow() { $('howto').classList.remove('hidden'); }
   function hideHow() {
@@ -41,6 +42,26 @@ const UI = (() => {
     $('btnContinue').onclick = () => { if (!Sim.load()) Sim.newGame(); enterGame(); };
     $('btnShop').onclick = () => { $('shop').classList.toggle('hidden'); renderShop(); };
     $('hudBury').onclick = () => Sim.buryCash();  // V2.5：風聲期間藏錢
+    // V3.1：雙擊成員卡 → 綁定自己的 Discord ID，成員就會穿你的楓之谷造型
+    $('roster').addEventListener('dblclick', (e) => {
+      const card = e.target.closest('.mem-card');
+      if (!card) return;
+      const memId = card.dataset.mem;
+      const mem = Sim.memberById(memId);
+      if (!mem) return;
+      const cur = Avatar.getBind(memId) || Avatar.myDiscordId();
+      const input = prompt(
+        `把 ${mem.name} 綁定到你的楓之谷造型\n` +
+        `輸入你的 Discord 使用者 ID（數字，DC 開發者模式可複製）。\n` +
+        `留空＝取消綁定（恢復 emoji）。`, cur || '');
+      if (input === null) return;
+      Avatar.bind(memId, input.trim());
+      setMyDiscordIdIfEmpty(input.trim());
+      renderRoster();
+      showToast(input.trim()
+        ? { icon: '🧑‍🎤', text: `${mem.name} 換上你的楓之谷造型了（圖片進畫面才會載）` }
+        : { icon: '🙂', text: `${mem.name} 取消造型綁定` });
+    });
     $('btnShopClose').onclick = () => $('shop').classList.add('hidden');
     $('btnMisClose').onclick = () => $('misPanel').classList.add('hidden');
     $('btnHelp').onclick = showHow;
@@ -144,14 +165,17 @@ const UI = (() => {
     el.innerHTML = '<div class="roster-title">🕴️ 派遣局</div>' + S.members.map((mem) => {
       const st = mem.state;
       const stTxt = st === 'idle' ? '🟢 待命' : st === 'onjob' ? '🔵 出勤' : '🚳 看守所';
+      const bound = Avatar.getBind(mem.id);
+      const bindTag = bound ? '<span class="bind-tag" title="已綁定楓之谷造型"> maple</span>' : '';
       return `<div class="mem-card" data-mem="${mem.id}">
         <div class="mem-top"><span class="ava">${mem.avatar}</span><b>${mem.name}</b><span class="st st-${st}">${stTxt}</span></div>
-        <div class="mem-stats">🗣️ 口才 ${mem.gab} · 🏃 腿力 ${mem.legs} · 🍀 運氣 ${mem.luck}</div>
+        <div class="mem-stats">🗣️ 口才 ${mem.gab} · 🏃 腿力 ${mem.legs} · 🍀 運氣 ${mem.luck}${bindTag}</div>
         <div class="mem-sub"></div>
         <div class="mem-actions"></div>
       </div>`;
     }).join('');
     tickRoster();
+    Avatar.attachCards(el);  // V3.1：紙娃娃頭像（懶載入，進畫面才要圖）
   }
 
   const fmtClock = (sec) => {

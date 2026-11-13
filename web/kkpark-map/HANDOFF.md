@@ -32,6 +32,8 @@
 - **結局**：信任歸零滅口 / 懷疑滿收押（敗）、警方進度 100 全台收網（勝）
 - **V3.0 第二幕（NPC 版，2026-11-13）**：①**破門行動主線**——警方進度 ≥50 解鎖：地圖東北出現 🏚️ 詐團總部（ACT2_HQ_POS），「🔍 蒐證任務」混進任務池（30% 權重、成功 evidence+1＋進度+8）→ 蒐證 2 份後點總部發動**總部決戰**（三戰法決策卡：閃電強攻/穩紮圍捕/請求大隊支援$25k；戰力=進度×0.9+蒐證×6+VPN，need=55+失手×8 遞增；勝→反轉、敗→進度-15/蒐證-1/起疑+12）。②**陣營反轉**（startAct2）：S.act2=true、仇恨+30／倚重+10、生成 3 個 NPC 據點（ACT2.CELLS：觀音山/機場線/旗津，各有 owner:'npc' 欄位預留真人版、suppress 鎮壓條 60）、舊任務作廢成員回家、任務池全變 🔨 掃蕩（撒在存活據點附近、成功 suppress −22~34＋倚重+9、歸零端掉→進度+12；全端掉→進度 100＝真結局）。③**攻守互換**：夜襲 rollRaid 在 act2 走詐團報復（kind:'gang'，機率=0.22+仇恨×0.003+剩餘據點×0.08、強度=34+天數×1.5+仇恨×0.35+據點×7）、貢金取消、結局 remap（sus 滿→purged 清理門戶文案）。數值條語義：🏴=警方倚重、👁️=詐團仇恨、🚔照舊。卡片時序：總部戰報的按鈕接續反轉劇情卡（同一 modal 連播，避免 emit 互踩）
 
+- **V3.1 紙娃娃頭像（2026-11-13）**：成員卡可綁 Discord 用戶的楓之谷造型——`avatar.js` 獨立模組，資料源是 VM API `https://kkgroup2026.duckdns.org/api/game/user/<discord_id>/paperdoll`（CORS 已放行任意 origin，實測通）。**節流設計（防大量圖片請求）**：①JSON 每 discordId 只抓一次（6 小時 TTL，localStorage＋記憶體雙快取）②圖片 URL 由欄位直接組 maplestory.io 公式（跟 VM paperdoll_manager 同款）③**懶載入**：IntersectionObserver——成員卡進入畫面＋頁籤可見才掛 img（背景分頁零請求，visibilitychange 回前景補載）④未綁定成員維持 emoji 零請求。綁定操作：**雙擊成員卡**輸入 Discord ID（存 localStorage `kkpark_map_avatar_bind_v1`）；已綁定的成員名冊顯示 🍁 標籤、emoji 縮成角標。失敗靜默退回 emoji（onerror 移除 img）
+
 ### 對標願景（Infection Free Zone，已與使用者對齊）
 
 分期：V1.5 建設版（✅）→ V2 夜間攻堅戰（✅ 2026-11-11 完成）→ 不做：真實建築建模/尋路/戰爭迷霧
