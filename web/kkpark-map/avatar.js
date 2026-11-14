@@ -58,7 +58,7 @@ const Avatar = (() => {
   }
 
   // ── 圖片 URL：用紙娃娃欄位直接組 maplestory.io URL（跟 VM 同一組公式）──
-  function buildImgUrl(pd) {
+  function buildImgUrl(pd, pose) {
     if (!pd) return null;
     const it = (v, def) => `{"itemId":${parseInt(v, 10) || def},"region":"TWMS","version":"256"}`;
     const items = [
@@ -66,7 +66,29 @@ const Avatar = (() => {
       it(pd.face, 20005), it(pd.hair, 30120),
       it(pd.overall || pd.top, 1040014), it(pd.bottom, 1060096), it(pd.shoes, 1072005),
     ];
-    return `https://maplestory.io/api/character/${items.join(',')}/stand1/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true`;
+    return `https://maplestory.io/api/character/${items.join(',')}/${pose || 'stand1'}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true`;
+  }
+
+  // ── NPC 派遣員造型池（跟 DC 歡迎圖同款的已驗證組合），memId hash 固定分配 ──
+  const NPC_LOOKS = [
+    { face: 20005, hair: 30120, top: 1040014, bottom: 1060096, shoes: 1072005 },
+    { face: 21731, hair: 34410, top: 1041004, bottom: 1061008, shoes: 1072005 },
+    { face: 20005, hair: 60006, top: 1042001, bottom: 1060096, shoes: 1070078 },
+  ];
+  function npcLook(memId) {
+    let h = 0;
+    for (let i = 0; i < memId.length; i++) h = (h * 31 + memId.charCodeAt(i)) | 0;
+    return NPC_LOOKS[Math.abs(h) % NPC_LOOKS.length];
+  }
+
+  // ── 地圖派遣小人：綁定成員穿 DC 造型（主角）、NPC 用池子；cb(url, isBound) ──
+  function jobIconUrl(memId, pose, cb) {
+    const discordId = bindings[memId];
+    if (discordId) {
+      fetchPaperdoll(discordId).then((pd) => cb(buildImgUrl(pd, pose), true));
+    } else {
+      cb(buildImgUrl(npcLook(memId), pose), false);
+    }
   }
 
   // ── 懶載入：卡片進入畫面＋頁籤可見才掛 <img> ──
@@ -139,5 +161,5 @@ const Avatar = (() => {
     }
   });
 
-  return { attachCards, bind, getBind, myDiscordId, setMyDiscordId, API_BASE };
+  return { attachCards, bind, getBind, jobIconUrl, myDiscordId, setMyDiscordId, API_BASE };
 })();

@@ -72,8 +72,19 @@ body {
   background: rgba(18, 23, 34, 0.9); border: 1px solid var(--cyan);
   border-radius: 14px; padding: 2px 7px;
   animation: jobPulse 2s ease-in-out infinite; white-space: nowrap;
+  position: relative;
 }
 .mk-job i { font-style: normal; font-size: 13px; }
+/* V3.2 楓之谷派遣小人：站 pill 左側，腳底貼 marker 點 */
+.mk-doll-slot { display: inline-flex; }
+.mk-doll {
+  position: absolute; left: -13px; bottom: -13px;
+  height: 48px; width: auto; max-width: none;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.65));
+  pointer-events: none; z-index: 2;
+}
+.mk-job-wrap.me .mk-job { border-color: var(--gold); box-shadow: 0 0 8px rgba(255, 225, 77, 0.45); }
 @keyframes jobPulse {
   0%, 100% { box-shadow: 0 0 4px rgba(125, 249, 255, 0.3); }
   50% { box-shadow: 0 0 12px rgba(125, 249, 255, 0.7); }

@@ -163,6 +163,8 @@ const GameMap = (() => {
   }
 
   // ===== 派遣中的成員標記（跟著 job.pos 走：趕路 → 工作 → 回程）=====
+  // V3.2：marker 本體是楓之谷小人——綁定成員（主角）穿 DC 造型、NPC 用固定造型池；
+  // 趕路放 walk1 走路動畫、工作中站 stand1；URL 到手才替換 emoji，失敗靜默留 emoji
   function renderJobs(jobs, members) {
     if (!map) return;
     for (const id in jobMarkers) {
@@ -174,12 +176,27 @@ const GameMap = (() => {
       if (!mem || !j.pos) continue;
       const emoji = j.leg === 'work' ? '📍' : '🛵';
       const moving = j.leg !== 'work';
+      const pose = moving ? 'walk1' : 'stand1';
       if (!jobMarkers[id]) {
         const mk = L.marker([j.pos.lat, j.pos.lng], {
-          icon: divIcon(`<div class="mk-job">${mem.avatar}<i>${emoji}</i></div>`, [34, 26], 'mk-job-wrap'),
+          icon: divIcon(`<div class="mk-job"><span class="mk-doll-slot">${mem.avatar}</span><i>${emoji}</i></div>`, [40, 28], 'mk-job-wrap'),
           interactive: false,
         }).addTo(mJobs);
         jobMarkers[id] = mk;
+        Avatar.jobIconUrl(id, pose, (url, isBound) => {
+          if (!url || jobMarkers[id] !== mk) return;
+          const el = mk.getElement();
+          const slot = el && el.querySelector('.mk-doll-slot');
+          if (!slot) return;
+          if (isBound && el) el.classList.add('me');  // 主角金框
+          const img = document.createElement('img');
+          img.className = 'mk-doll';
+          img.alt = '';
+          img.decoding = 'async';
+          img.onload = () => { slot.textContent = ''; slot.appendChild(img); };  // 載完才收 emoji
+          img.onerror = () => { img.remove(); };  // 失敗靜默留 emoji
+          img.src = url;
+        });
       } else {
         jobMarkers[id].setLatLng([j.pos.lat, j.pos.lng]);
         const el = jobMarkers[id].getElement();
@@ -187,6 +204,11 @@ const GameMap = (() => {
           el.classList.toggle('mv', moving);
           const ic = el.querySelector('.mk-job i');
           if (ic) ic.textContent = emoji;
+          const img = el.querySelector('.mk-doll');
+          if (img && !img.src.includes('/' + pose + '/animated')) {
+            // 走路↔站立換動畫（同一 URL 瀏覽器會快取，重複切換近乎零成本）
+            Avatar.jobIconUrl(id, pose, (url) => { if (url && img.isConnected) img.src = url; });
+          }
         }
       }
     }
