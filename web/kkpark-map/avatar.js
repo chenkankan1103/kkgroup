@@ -10,7 +10,8 @@ const Avatar = (() => {
   const API_BASE = 'https://kkgroup2026.duckdns.org';
   const BIND_KEY = 'kkpark_map_avatar_bind_v1';   // { memId: discordId }
   const CACHE_KEY = 'kkpark_map_avatar_cache_v1'; // { discordId: {face,hair,...} | null }
-  const JSON_TTL = 6 * 60 * 60 * 1000;            // JSON 快取 6 小時
+  const JSON_TTL = 6 * 60 * 60 * 1000;            // 成功資料快取 6 小時
+  const JSON_TTL_MISS = 5 * 60 * 1000;            // 失敗（null）只快 5 分鐘，別卡半天
 
   const jsonCache = new Map();   // discordId -> paperdoll|null|'loading'
   const urlCache = new Map();    // discordId -> img url|null
@@ -36,8 +37,9 @@ const Avatar = (() => {
   function fetchPaperdoll(discordId) {
     if (!discordId || !/^\d{5,25}$/.test(discordId)) return Promise.resolve(null);
     const cached = diskCache[discordId];
-    if (cached && cached.t && Date.now() - cached.t < JSON_TTL) {
-      return Promise.resolve(cached.d);
+    if (cached && cached.t) {
+      const ttl = cached.d ? JSON_TTL : JSON_TTL_MISS;
+      if (Date.now() - cached.t < ttl) return Promise.resolve(cached.d);
     }
     if (jsonCache.get(discordId) === 'loading') return jsonCache.get(discordId + '#p') || Promise.resolve(null);
     const p = fetch(`${API_BASE}/api/game/user/${discordId}/paperdoll`, { mode: 'cors' })
@@ -95,13 +97,12 @@ const Avatar = (() => {
     img.alt = '';
     img.decoding = 'async';
     img.loading = 'lazy';
-    img.onerror = () => { img.remove(); };  // 失敗靜默退回 emoji
-    // 先把 emoji 縮成小角標，圖片來了再蓋上
-    holder.classList.add('has-doll');
+    img.onload = () => { if (img.isConnected) holder.classList.add('has-doll'); };  // 圖到手才把 emoji 縮成角標
+    img.onerror = () => { img.remove(); holder.classList.remove('has-doll'); };    // 失敗復原成正常 emoji
     holder.appendChild(img);
     fetchPaperdoll(discordId).then((pd) => {
       const url = buildImgUrl(pd);
-      if (!url) { img.remove(); holder.classList.remove('has-doll'); return; }
+      if (!url) { img.remove(); return; }
       img.src = url;
     });
   }
