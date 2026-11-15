@@ -214,6 +214,7 @@ const GameMap = (() => {
 
   function renderJobs(jobs, members) {
     if (!map) return;
+    if (members.length && typeof Avatar.setProtagonist === 'function') Avatar.setProtagonist(members[0].id);  // 主角＝名冊第一位
     for (const id in jobMarkers) {
       if (!jobs[id]) { mJobs.removeLayer(jobMarkers[id]); delete jobMarkers[id]; }
     }

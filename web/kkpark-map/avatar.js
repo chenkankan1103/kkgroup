@@ -131,11 +131,16 @@ const Avatar = (() => {
     };
   }
 
-  // ── 成員的造型來源：明確綁定優先；my 尚未綁給任何人時自動當主角（第一位成員）──
+  // ── 成員的造型來源：明確綁定優先；my 尚未綁給任何人時只套「第一位成員」（主角），
+  //    其他成員一律是 NPC（造型池）——不是人人都穿玩家的衣服 ──
+  let protagonistMemId = null;   // my 自動套用的對象（依成員清單第一位動態認定）
+  function setProtagonist(memId) {
+    if (memId && !protagonistMemId) protagonistMemId = memId;  // 只認第一次
+  }
   function resolveDiscordId(memId) {
     if (bindings[memId]) return bindings[memId];
     const my = myDiscordId();
-    if (my && !Object.values(bindings).includes(my)) return my;
+    if (my && protagonistMemId === memId && !Object.values(bindings).includes(my)) return my;
     return '';
   }
 
@@ -192,9 +197,10 @@ const Avatar = (() => {
   // ── 對外：成員卡掛上綁定與懶載入（ui.js renderRoster 每次重建後呼叫）──
   function attachCards(rootEl) {
     if (!rootEl) return;
-    rootEl.querySelectorAll('.mem-card').forEach((card) => {
+    rootEl.querySelectorAll('.mem-card').forEach((card, idx) => {
       const memId = card.dataset.mem;
       if (!memId) return;
+      setProtagonist(memId);   // 名冊第一位（還沒人登記時）＝主角，fallback 造型只套它
       const discordId = resolveDiscordId(memId);
       if (!discordId) return;
       card.dataset.avatarDiscord = discordId;
@@ -220,5 +226,5 @@ const Avatar = (() => {
     }
   });
 
-  return { attachCards, bind, getBind, jobIconUrl, myDiscordId, setMyDiscordId, startOAuth, handleOAuthReturn, API_BASE };
+  return { attachCards, bind, getBind, jobIconUrl, myDiscordId, setMyDiscordId, setProtagonist, startOAuth, handleOAuthReturn, API_BASE };
 })();
