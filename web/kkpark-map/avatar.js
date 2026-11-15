@@ -58,7 +58,8 @@ const Avatar = (() => {
   }
 
   // ── 圖片 URL：用紙娃娃欄位直接組 maplestory.io URL（跟 VM 同一組公式）──
-  function buildImgUrl(pd, pose) {
+  // animated=false 給單幀靜態圖（NPC 待命/工作用，PNG 比動畫 gif 小很多）
+  function buildImgUrl(pd, pose, animated, resize) {
     if (!pd) return null;
     const it = (v, def) => `{"itemId":${parseInt(v, 10) || def},"region":"TWMS","version":"256"}`;
     const items = [
@@ -66,28 +67,47 @@ const Avatar = (() => {
       it(pd.face, 20005), it(pd.hair, 30120),
       it(pd.overall || pd.top, 1040014), it(pd.bottom, 1060096), it(pd.shoes, 1072005),
     ];
-    return `https://maplestory.io/api/character/${items.join(',')}/${pose || 'stand1'}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true`;
+    const tail = animated === false ? '0' : 'animated';
+    return `https://maplestory.io/api/character/${items.join(',')}/${pose || 'stand1'}/${tail}?showears=false&showLefEars=false&showHighLefEars=false&resize=${resize || 3}&flipX=true`;
   }
 
-  // ── NPC 派遣員造型池（跟 DC 歡迎圖同款的已驗證組合），memId hash 固定分配 ──
+  // ── NPC 派遣員造型：從 npc_looks.js（twms_fashion_db 有效 ID、男女分池）hash 抽選，
+  //    同一 memId 永遠同一套；池子缺席（舊快取）才退 3 組硬編碼 ──
   const NPC_LOOKS = [
     { face: 20005, hair: 30120, top: 1040014, bottom: 1060096, shoes: 1072005 },
     { face: 21731, hair: 34410, top: 1041004, bottom: 1061008, shoes: 1072005 },
     { face: 20005, hair: 60006, top: 1042001, bottom: 1060096, shoes: 1070078 },
   ];
+  function hashId(memId, salt) {
+    let h = salt | 0;
+    for (let i = 0; i < memId.length; i++) h = (Math.imul(h ^ memId.charCodeAt(i), 2654435761) | 0);
+    h ^= h >>> 13;
+    return Math.abs(h);
+  }
   function npcLook(memId) {
-    let h = 0;
-    for (let i = 0; i < memId.length; i++) h = (h * 31 + memId.charCodeAt(i)) | 0;
-    return NPC_LOOKS[Math.abs(h) % NPC_LOOKS.length];
+    const db = (typeof NPC_LOOKS_DB !== 'undefined') ? NPC_LOOKS_DB : null;
+    if (!db || !db.male) return NPC_LOOKS[hashId(memId, 7) % NPC_LOOKS.length];
+    const gender = hashId(memId, 7) % 2 === 0 ? 'male' : 'female';
+    const g = db[gender];
+    const pick = (arr, salt, def) => (arr && arr.length ? arr[hashId(memId, salt) % arr.length] : def);
+    return {
+      face: pick(g.face, 11, 20005),
+      hair: pick(g.hair, 13, 30120),
+      top: pick(g.top, 17, 1040014),
+      bottom: pick(g.bottom, 19, 1060096),
+      shoes: pick(g.shoes, 23, 1072005),
+    };
   }
 
-  // ── 地圖派遣小人：綁定成員穿 DC 造型（主角）、NPC 用池子；cb(url, isBound) ──
+  // ── 地圖派遣小人：綁定成員（主角）穿 DC 造型＋動畫＋大圖；NPC 用池子＋靜態＋小圖。
+  //    cb(url, isBound)；主角站立也用動畫（跟名冊頭像同 URL，共用瀏覽器快取）──
   function jobIconUrl(memId, pose, cb) {
     const discordId = bindings[memId];
     if (discordId) {
-      fetchPaperdoll(discordId).then((pd) => cb(buildImgUrl(pd, pose), true));
+      fetchPaperdoll(discordId).then((pd) => cb(buildImgUrl(pd, pose, true, 3), true));
     } else {
-      cb(buildImgUrl(npcLook(memId), pose), false);
+      // NPC：待命/工作用靜態單幀，走路才換動畫 gif；resize=2 省流量
+      cb(buildImgUrl(npcLook(memId), pose, pose === 'walk1', 2), false);
     }
   }
 

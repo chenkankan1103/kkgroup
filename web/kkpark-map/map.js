@@ -5,7 +5,8 @@ const GameMap = (() => {
   let map = null;
   let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, mAct2;
   const cb = {}; // 對外回呼：missionClick
-  const jobMarkers = {}; // memId -> marker（不重建，才能用 CSS transition 平滑走路）
+  const jobMarkers = {}; // memId -> marker（出勤；不重建，才能用 CSS transition 平滑走路）
+  const homeMarkers = {}; // memId -> marker（待命站總部周圍）
 
   // 台灣本島粗略輪廓與擋海判斷已退役——警車改坐真實路網（roads.js），山裡海上自然沒有車
   // 決定性偽隨機：同一格子、同一時段 → 每個玩家看到同一批警察（零後端）
@@ -165,6 +166,52 @@ const GameMap = (() => {
   // ===== 派遣中的成員標記（跟著 job.pos 走：趕路 → 工作 → 回程）=====
   // V3.2：marker 本體是楓之谷小人——綁定成員（主角）穿 DC 造型、NPC 用固定造型池；
   // 趕路放 walk1 走路動畫、工作中站 stand1；URL 到手才替換 emoji，失敗靜默留 emoji
+  // V3.2.1：沒派遣的成員（待命）站園區總部周圍——主角在家看得到，不會任務一結束人消失
+  function homeSpot(memId, idx, total) {
+    let h = 0;
+    for (let i = 0; i < memId.length; i++) h = (h * 31 + memId.charCodeAt(i)) | 0;
+    // 均勻圓圈打底（idx/total），memId hash 只做 ±40° 微調——人多也不疊點
+    const ang = (idx / Math.max(1, total)) * Math.PI * 2 + ((Math.abs(h) % 80) - 40) * Math.PI / 180;
+    const r = 0.0007 + (Math.abs(h >> 3) % 3) * 0.0004;  // ~78–155m 三層圈
+    return [HQ.lat + Math.sin(ang) * r, HQ.lng + Math.cos(ang) * r];
+  }
+
+  function dollSrc(memId) {
+    const b = Avatar.getBind(memId);
+    return b ? 'b' + b : 'npc';
+  }
+
+  function attachDoll(mk, memId, pose, registry) {
+    const srcNow = dollSrc(memId);
+    const el0 = mk.getElement();
+    if (el0) el0.dataset.dollSrc = srcNow;
+    Avatar.jobIconUrl(memId, pose, (url, isBound) => {
+      if (!url || registry[memId] !== mk) return;
+      const el = mk.getElement();
+      if (!el || el.dataset.dollSrc !== srcNow) return;  // 已有更新的掛載請求，這筆作廢
+      const slot = el.querySelector('.mk-doll-slot');
+      if (!slot) return;
+      if (isBound && el) el.classList.add('me');  // 主角金框
+      const img = document.createElement('img');
+      img.className = 'mk-doll';
+      img.alt = '';
+      img.decoding = 'async';
+      img.onload = () => { slot.textContent = ''; slot.appendChild(img); };  // 載完才收 emoji
+      img.onerror = () => { img.remove(); };  // 失敗靜默留 emoji
+      img.src = url;
+    });
+  }
+
+  // 綁定狀態變了（雙擊綁定／解綁）：還原 emoji、拆金框、重掛造型
+  function rebindDoll(mk, memId, emoji, pose, registry) {
+    const el = mk.getElement();
+    if (!el || el.dataset.dollSrc === dollSrc(memId)) return;
+    el.classList.remove('me');
+    const slot = el.querySelector('.mk-doll-slot');
+    if (slot) slot.innerHTML = emoji;
+    attachDoll(mk, memId, pose, registry);
+  }
+
   function renderJobs(jobs, members) {
     if (!map) return;
     for (const id in jobMarkers) {
@@ -183,20 +230,7 @@ const GameMap = (() => {
           interactive: false,
         }).addTo(mJobs);
         jobMarkers[id] = mk;
-        Avatar.jobIconUrl(id, pose, (url, isBound) => {
-          if (!url || jobMarkers[id] !== mk) return;
-          const el = mk.getElement();
-          const slot = el && el.querySelector('.mk-doll-slot');
-          if (!slot) return;
-          if (isBound && el) el.classList.add('me');  // 主角金框
-          const img = document.createElement('img');
-          img.className = 'mk-doll';
-          img.alt = '';
-          img.decoding = 'async';
-          img.onload = () => { slot.textContent = ''; slot.appendChild(img); };  // 載完才收 emoji
-          img.onerror = () => { img.remove(); };  // 失敗靜默留 emoji
-          img.src = url;
-        });
+        attachDoll(mk, id, pose, jobMarkers);
       } else {
         jobMarkers[id].setLatLng([j.pos.lat, j.pos.lng]);
         const el = jobMarkers[id].getElement();
@@ -204,14 +238,40 @@ const GameMap = (() => {
           el.classList.toggle('mv', moving);
           const ic = el.querySelector('.mk-job i');
           if (ic) ic.textContent = emoji;
-          const img = el.querySelector('.mk-doll');
-          if (img && !img.src.includes('/' + pose + '/animated')) {
-            // 走路↔站立換動畫（同一 URL 瀏覽器會快取，重複切換近乎零成本）
-            Avatar.jobIconUrl(id, pose, (url) => { if (url && img.isConnected) img.src = url; });
+          if (el.dataset.dollSrc !== dollSrc(id)) {
+            rebindDoll(jobMarkers[id], id, mem.avatar, pose, jobMarkers);
+          } else {
+            const img = el.querySelector('.mk-doll');
+            if (img && !img.src.includes('/' + pose + '/')) {
+              // 走路↔站立換圖（靜態/動畫由 jobIconUrl 依身分決定；同 URL 瀏覽器快取）
+              Avatar.jobIconUrl(id, pose, (url) => { if (url && img.isConnected) img.src = url; });
+            }
           }
         }
       }
     }
+    // 待命成員站總部周圍（站位由 memId 決定、永不變；出勤即收掉）
+    for (const mid in homeMarkers) {
+      const mem = members.find((m) => m.id === mid);
+      if (!mem || jobs[mid] || mem.state !== 'idle') {
+        mJobs.removeLayer(homeMarkers[mid]); delete homeMarkers[mid];
+      }
+    }
+    const idleMems = members.filter((m) => !jobs[m.id] && m.state === 'idle');
+    idleMems.forEach((mem, idx) => {
+      const hm = homeMarkers[mem.id];
+      if (!hm) {
+        const [hlat, hlng] = homeSpot(mem.id, idx, idleMems.length);
+        const mk = L.marker([hlat, hlng], {
+          icon: divIcon(`<div class="mk-job"><span class="mk-doll-slot">${mem.avatar}</span><i>🟢</i></div>`, [40, 28], 'mk-job-wrap'),
+          interactive: false,
+        }).addTo(mJobs);
+        homeMarkers[mem.id] = mk;
+        attachDoll(mk, mem.id, 'stand1', homeMarkers);
+      } else {
+        rebindDoll(hm, mem.id, mem.avatar, 'stand1', homeMarkers);
+      }
+    });
   }
 
   // ===== 園區建設：蓋好的設施與工地排在總部四周 =====

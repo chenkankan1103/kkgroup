@@ -85,6 +85,20 @@ body {
   pointer-events: none; z-index: 2;
 }
 .mk-job-wrap.me .mk-job { border-color: var(--gold); box-shadow: 0 0 8px rgba(255, 225, 77, 0.45); }
+/* 主角專屬：頭頂金冠＋腳下光環，跟 NPC 一眼區分（位置對準 .mk-doll：left -13px 高 48px） */
+.mk-job-wrap.me::after {
+  content: '👑';
+  position: absolute; top: -24px; left: 3px; transform: translateX(-50%);
+  font-size: 13px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+  pointer-events: none; z-index: 3;
+}
+.mk-job-wrap.me::before {
+  content: '';
+  position: absolute; bottom: -14px; left: 3px; transform: translateX(-50%);
+  width: 38px; height: 9px; border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 225, 77, 0.55), transparent 70%);
+  pointer-events: none; z-index: 1;
+}
 @keyframes jobPulse {
   0%, 100% { box-shadow: 0 0 4px rgba(125, 249, 255, 0.3); }
   50% { box-shadow: 0 0 12px rgba(125, 249, 255, 0.7); }
