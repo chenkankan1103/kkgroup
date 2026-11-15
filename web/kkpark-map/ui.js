@@ -30,11 +30,12 @@ const UI = (() => {
 
   function boot() {
     GameMap.init();
-    // V3.4：OAuth 回跳（?auth_token=…）先驗 token 存 my；名冊渲染時 fallback 自動讓第一位成員當主角
+    // V3.4：OAuth 回跳（?auth_token=…）→ 驗 token 存 my → 直接進遊戲（有存檔續玩、沒有開新局）
     Avatar.handleOAuthReturn().then((uid) => {
       if (!uid) return;
-      if (Sim.state()) renderRoster();  // 已在遊戲中（存檔續玩情境）才重渲；否則等玩家按鈕
-      showToast({ icon: '🧑‍🎤', text: 'Discord 登入成功——你的造型已綁定' });
+      if (!Sim.load()) Sim.newGame();
+      enterGame();
+      showToast({ icon: '🧑‍🎤', text: 'Discord 登入成功——主角穿上你的造型了' });
     });
     updateLoginBtn();  // 開場畫面按鈕顯示登入狀態（避免「到底登入了沒」的困惑）
     Sim.on('tick', onTick);
