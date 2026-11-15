@@ -70,6 +70,8 @@ def login():
         ), 500
 
     redirect_uri = _get_redirect_uri()
+    # state：登入方帶來的回跳目標（可選；原樣帶回 callback，用於跨域跳回如 GitHub Pages）
+    state = request.args.get("state", "")
     oauth_url = (
         f"https://discord.com/api/oauth2/authorize?"
         f"client_id={DISCORD_CLIENT_ID}"
@@ -77,6 +79,9 @@ def login():
         f"&response_type=code"
         f"&scope=identify%20email%20guilds"
     )
+    if state:
+        from urllib.parse import quote
+        oauth_url += f"&state={quote(state, safe='')}"
 
     return jsonify(
         {
@@ -165,11 +170,14 @@ def oauth_callback():
         )
 
         # 5️⃣ 重定向回遊戲或前端
-        # 檢查是否是遊戲的登入（通過 referrer 或固定目標）
+        # 優先用 state（登入時帶入的完整目標 URL，支援跨域，如 GitHub Pages 的 /map/）
+        state = request.args.get("state") or ""
         redirect_url = None
-
-        # 優先重定向到遊戲
-        if request.referrer and (
+        if state.startswith("http://") or state.startswith("https://"):
+            sep = "&" if "?" in state else "?"
+            redirect_url = f"{state}{sep}auth_token={session_token}&user_id={user_data.get('id')}"
+        # 檢查是否是遊戲的登入（通過 referrer 或固定目標）
+        elif request.referrer and (
             "/rpg-game" in request.referrer or "/game" in request.referrer
         ):
             redirect_url = (

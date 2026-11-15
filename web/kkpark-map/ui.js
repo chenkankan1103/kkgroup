@@ -18,6 +18,12 @@ const UI = (() => {
   /* ===== 開場 ===== */
   function boot() {
     GameMap.init();
+    // V3.4：OAuth 回跳（?auth_token=…）先驗 token 存 my；名冊渲染時 fallback 自動讓第一位成員當主角
+    Avatar.handleOAuthReturn().then((uid) => {
+      if (!uid) return;
+      if (Sim.state()) renderRoster();  // 已在遊戲中（存檔續玩情境）才重渲；否則等玩家按鈕
+      showToast({ icon: '🧑‍🎤', text: 'Discord 登入成功——你的造型已綁定' });
+    });
     Sim.on('tick', onTick);
     Sim.on('missions', renderMissions);
     Sim.on('roster', renderRoster);
@@ -40,6 +46,8 @@ const UI = (() => {
     }
     $('btnStartNew').onclick = () => { Sim.newGame(); enterGame(); };
     $('btnContinue').onclick = () => { if (!Sim.load()) Sim.newGame(); enterGame(); };
+    // V3.4：Discord OAuth 登入——跳 VM 現成 /api/auth，回跳後自動綁主角（handleOAuthReturn 在 boot 先跑）
+    $('btnDiscordLogin').onclick = () => Avatar.startOAuth();
     $('btnShop').onclick = () => { $('shop').classList.toggle('hidden'); renderShop(); };
     $('hudBury').onclick = () => Sim.buryCash();  // V2.5：風聲期間藏錢
     // V3.1：雙擊成員卡 → 綁定自己的 Discord ID，成員就會穿你的楓之谷造型

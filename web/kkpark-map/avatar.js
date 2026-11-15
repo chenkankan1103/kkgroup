@@ -33,6 +33,38 @@ const Avatar = (() => {
     try { localStorage.setItem('kkpark_discord_id', id || ''); } catch (e) {}
   }
 
+  // ── Discord OAuth 登入（VM 現成 /api/auth；state 帶回跳網址，回來後 verify 綁主角）──
+  const LOGIN_RETURN_KEY = 'kkpark_map_auth_return';   // 防重複綁定的標記
+  function startOAuth() {
+    // 回跳目標：現在頁面網址（清掉舊的 auth_token 參數）
+    let here = location.origin + location.pathname;
+    fetch(`${API_BASE}/api/auth/login?state=${encodeURIComponent(here)}`, { mode: 'cors' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.oauth_url) location.href = d.oauth_url;
+        else alert('登入服務暫時不可用，稍後再試');
+      })
+      .catch(() => alert('登入服務暫時不可用，稍後再試'));
+  }
+  // 回跳處理：?auth_token=xxx → verify → 自動綁主角 → 清參數（免 reload，直接進行中遊戲）
+  function handleOAuthReturn() {
+    const q = new URLSearchParams(location.search);
+    const token = q.get('auth_token');
+    if (!token) return Promise.resolve(null);
+    history.replaceState(null, '', location.pathname);  // 先清 URL，重整不重複處理
+    try { localStorage.setItem(LOGIN_RETURN_KEY, '1'); } catch (e) {}
+    return fetch(`${API_BASE}/api/auth/verify`, { headers: { Authorization: `Bearer ${token}` }, mode: 'cors' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d || !d.authenticated) return null;
+        const uid = d.user && d.user.id;
+        if (!uid) return null;
+        setMyDiscordId(uid);
+        return uid;
+      })
+      .catch(() => null);
+  }
+
   // ── JSON：每個 discordId 一個請求，帶 TTL 快取 ──
   function fetchPaperdoll(discordId) {
     if (!discordId || !/^\d{5,25}$/.test(discordId)) return Promise.resolve(null);
@@ -99,10 +131,18 @@ const Avatar = (() => {
     };
   }
 
+  // ── 成員的造型來源：明確綁定優先；my 尚未綁給任何人時自動當主角（第一位成員）──
+  function resolveDiscordId(memId) {
+    if (bindings[memId]) return bindings[memId];
+    const my = myDiscordId();
+    if (my && !Object.values(bindings).includes(my)) return my;
+    return '';
+  }
+
   // ── 地圖派遣小人：綁定成員（主角）穿 DC 造型＋動畫＋大圖；NPC 用池子＋靜態＋小圖。
   //    cb(url, isBound)；主角站立也用動畫（跟名冊頭像同 URL，共用瀏覽器快取）──
   function jobIconUrl(memId, pose, cb) {
-    const discordId = bindings[memId];
+    const discordId = resolveDiscordId(memId);
     if (discordId) {
       fetchPaperdoll(discordId).then((pd) => cb(buildImgUrl(pd, pose, true, 3), true));
     } else {
@@ -152,11 +192,10 @@ const Avatar = (() => {
   // ── 對外：成員卡掛上綁定與懶載入（ui.js renderRoster 每次重建後呼叫）──
   function attachCards(rootEl) {
     if (!rootEl) return;
-    const my = myDiscordId();
     rootEl.querySelectorAll('.mem-card').forEach((card) => {
       const memId = card.dataset.mem;
       if (!memId) return;
-      const discordId = bindings[memId] || (my && !Object.values(bindings).includes(my) ? my : '');
+      const discordId = resolveDiscordId(memId);
       if (!discordId) return;
       card.dataset.avatarDiscord = discordId;
       const obs = ensureObserver();
@@ -181,5 +220,5 @@ const Avatar = (() => {
     }
   });
 
-  return { attachCards, bind, getBind, jobIconUrl, myDiscordId, setMyDiscordId, API_BASE };
+  return { attachCards, bind, getBind, jobIconUrl, myDiscordId, setMyDiscordId, startOAuth, handleOAuthReturn, API_BASE };
 })();

@@ -301,8 +301,11 @@ button.pick:hover { border-color: var(--pink); }
 .intro-tips { list-style: none; margin: 12px 0 16px; display: flex; flex-direction: column; gap: 6px; }
 .intro-tips li { font-size: 13px; color: var(--dim); }
 .intro-tips b { color: var(--txt); }
-.intro-btns { display: flex; gap: 8px; }
+.intro-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .intro-btns .ev-btn { flex: 1; }
+/* V3.4：Discord 登入（次按鈕，不搶主流程） */
+.ev-btn.dc-login { border-color: #5865F2; color: #aab2ff; font-size: 13px; flex-basis: 100%; }
+.ev-btn.dc-login:hover { box-shadow: 0 0 12px rgba(88, 101, 242, 0.4); }
 
 .howto-steps { margin: 4px 0 14px; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
 .howto-steps li { font-size: 13.5px; color: var(--dim); line-height: 1.55; }
