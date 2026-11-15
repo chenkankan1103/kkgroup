@@ -156,6 +156,13 @@ const Avatar = (() => {
     }
   }
 
+  // ── 主角（玩家化身）的造型 URL：直接用 my Discord ID，不走成員綁定 ──
+  function heroIconUrl(pose, cb) {
+    const my = myDiscordId();
+    if (!my) { cb(null, false); return; }
+    fetchPaperdoll(my).then((pd) => cb(buildImgUrl(pd, pose, true, 3), true));
+  }
+
   // ── 懶載入：卡片進入畫面＋頁籤可見才掛 <img> ──
   function ensureObserver() {
     if (observer || typeof IntersectionObserver === 'undefined') return observer;
@@ -226,5 +233,5 @@ const Avatar = (() => {
     }
   });
 
-  return { attachCards, bind, getBind, jobIconUrl, myDiscordId, setMyDiscordId, setProtagonist, startOAuth, handleOAuthReturn, API_BASE };
+  return { attachCards, bind, getBind, jobIconUrl, heroIconUrl, myDiscordId, setMyDiscordId, setProtagonist, startOAuth, handleOAuthReturn, API_BASE };
 })();

@@ -367,6 +367,45 @@ const GameMap = (() => {
   // ===== V2：攻堅集結——警車紅藍閃爍從四面八方圍向總部；結算後撤走 =====
   // 放獨立圖層，不會被 refreshPolice 的 clearLayers() 掃掉
   let raidCars = [];
+  // ===== V3.5：主角（玩家化身）marker——操控走動、鏡頭跟隨、碰警車盤查 =====
+  let heroMarker = null;
+  let heroPose = 'stand1';  // stand1 / walk1（img.src 切換）
+  function renderHero() {
+    if (!map) return;
+    const S = Sim.state();
+    if (!S || !S.hero) return;
+    const pos = S.hero.pos;
+    if (!heroMarker) {
+      heroMarker = L.marker([pos.lat, pos.lng], {
+        icon: divIcon('<div class="mk-hero"><span class="mk-doll-slot">🙂</span></div>', [46, 34], 'mk-hero-wrap'),
+        interactive: false, zIndexOffset: 1000,
+      }).addTo(mJobs);
+      // 主角造型：玩家綁的 DC 造型（沒登入就維持 🙂 佔位）
+      Avatar.heroIconUrl('stand1', (url) => {
+        if (!url || !heroMarker) return;
+        const el = heroMarker.getElement();
+        const slot = el && el.querySelector('.mk-doll-slot');
+        if (!slot) return;
+        const img = document.createElement('img');
+        img.className = 'mk-doll';
+        img.alt = '';
+        img.decoding = 'async';
+        img.onload = () => { slot.textContent = ''; slot.appendChild(img); };
+        img.onerror = () => { img.remove(); };
+        img.src = url;
+      });
+    } else {
+      heroMarker.setLatLng([pos.lat, pos.lng]);
+    }
+    // 走路↔站立換動畫
+    const wantPose = S.hero.moving ? 'walk1' : 'stand1';
+    if (wantPose !== heroPose) {
+      heroPose = wantPose;
+      const el = heroMarker.getElement();
+      const img = el && el.querySelector('.mk-doll');
+      if (img) Avatar.heroIconUrl(wantPose, (url) => { if (url && img.isConnected) img.src = url; });
+    }
+  }
   function raidAssembly(on) {
     if (!map) return;
     clearRaid();
@@ -415,5 +454,41 @@ const GameMap = (() => {
     return mPolice ? mPolice.getLayers().map((l) => l.getLatLng()) : [];
   }
 
-  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, cb };
+  // ===== V3.5：鍵盤操控主角＋鏡頭跟隨 =====
+  const KEYMAP = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right',
+  };
+  let followHero = true;  // 進遊戲後鏡頭跟著主角；玩家手動拖地圖就暫時放開
+  function bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      const dir = KEYMAP[e.code];
+      if (!dir) return;
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;  // 別搶輸入框
+      e.preventDefault();  // 防頁面滾動
+      Sim.setKey(dir, true);
+      followHero = true;
+    });
+    document.addEventListener('keyup', (e) => {
+      const dir = KEYMAP[e.code];
+      if (dir) Sim.setKey(dir, false);
+    });
+    // 拖動地圖＝暫停跟隨（點主角鍵會再啟動）
+    map.on('dragstart', () => { followHero = false; });
+  }
+  let heroFollowTick = 0;
+  function followTick() {
+    if (!map || !followHero) return;
+    const S = Sim.state();
+    if (!S || !S.hero) return;
+    const h = S.hero.pos;
+    const c = map.getCenter();
+    if (Math.abs(h.lat - c.lat) > 0.0004 || Math.abs(h.lng - c.lng) > 0.0004) {
+      map.panTo([h.lat, h.lng], { animate: true, duration: 0.5 });
+    }
+  }
+
+  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, cb };
 })();
