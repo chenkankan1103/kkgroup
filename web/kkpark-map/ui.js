@@ -16,6 +16,18 @@ const UI = (() => {
   }
 
   /* ===== 開場 ===== */
+  /* ===== V3.4：Discord 登入按鈕狀態（登入後顯示 ✓ 已登入） ===== */
+  function updateLoginBtn() {
+    const btn = $('btnDiscordLogin');
+    if (!btn) return;
+    const my = Avatar.myDiscordId();
+    if (my) {
+      btn.textContent = '✓ 已登入 Discord（ID 尾碼 ' + my.slice(-4) + '）——重登可換帳';
+    } else {
+      btn.textContent = '🧑‍🎤 用 Discord 登入（穿自己的造型）';
+    }
+  }
+
   function boot() {
     GameMap.init();
     // V3.4：OAuth 回跳（?auth_token=…）先驗 token 存 my；名冊渲染時 fallback 自動讓第一位成員當主角
@@ -24,6 +36,7 @@ const UI = (() => {
       if (Sim.state()) renderRoster();  // 已在遊戲中（存檔續玩情境）才重渲；否則等玩家按鈕
       showToast({ icon: '🧑‍🎤', text: 'Discord 登入成功——你的造型已綁定' });
     });
+    updateLoginBtn();  // 開場畫面按鈕顯示登入狀態（避免「到底登入了沒」的困惑）
     Sim.on('tick', onTick);
     Sim.on('missions', renderMissions);
     Sim.on('roster', renderRoster);
