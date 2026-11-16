@@ -497,18 +497,64 @@ const Sim = (() => {
   let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
   function armHeroGrace() { heroCheckCd = gameMin() + 12; }  // 進場 12 遊戲分鐘免疫（主角出生在總部，總部周邊必有巡查車）
 
+  // ── V3.5.1 貼路行走：路網點格子索引（400m 格，跟 map.js 同款），最近點查詢 ──
+  const ROAD_CELL = 0.004;
+  let roadGrid = null;
+  function buildRoadGrid() {
+    roadGrid = new Map();
+    for (const chain of ROAD_NET) {
+      for (const p of chain) {
+        const key = Math.floor(p[0] / ROAD_CELL) + ',' + Math.floor(p[1] / ROAD_CELL);
+        let arr = roadGrid.get(key);
+        if (!arr) roadGrid.set(key, (arr = []));
+        arr.push(p);
+      }
+    }
+  }
+  // 最近路網點：從 3x3 格起步、找不到再擴到 7x7；全空回 null（離路網太遠＝自由行走）
+  function nearestRoad(lat, lng) {
+    if (!roadGrid && typeof ROAD_NET !== 'undefined' && ROAD_NET.length) buildRoadGrid();
+    if (!roadGrid) return null;
+    const gy = Math.floor(lat / ROAD_CELL), gx = Math.floor(lng / ROAD_CELL);
+    for (const r of [1, 2, 3]) {
+      let best = null, bestD = Infinity;
+      for (let yy = gy - r; yy <= gy + r; yy++) {
+        for (let xx = gx - r; xx <= gx + r; xx++) {
+          const arr = roadGrid.get(yy + ',' + xx);
+          if (!arr) continue;
+          for (const p of arr) {
+            const d = (p[0] - lat) * (p[0] - lat) + (p[1] - lng) * (p[1] - lng);
+            if (d < bestD) { bestD = d; best = p; }
+          }
+        }
+      }
+      if (best) return { lat: best[0], lng: best[1], dist: Math.sqrt(bestD) };
+    }
+    return null;
+  }
+
   function heroTick() {
     if (!S || !S.hero) return;
-    const sp = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
+    const base = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
     let dx = 0, dy = 0;
     if (keys.left) dx -= 1; if (keys.right) dx += 1;
     if (keys.up) dy -= 1; if (keys.down) dy += 1;
     if (dx || dy) {
+      // 貼路行走：往輸入方向走，但位置吸附到最近的路網點（跟巡查車同一套路網）；
+      // 離路網越遠＝在巷弄／建築裡鑽，越慢（街区感），吸附力道隨距離衰減
       const d = Math.hypot(dx, dy);
-      S.hero.pos.lat += (dy / d) * sp;
-      S.hero.pos.lng += (dx / d) * sp;
+      const p = S.hero.pos;
+      let nlat = p.lat + (-dy / d) * base;   // 螢幕上＝緯度增加（Leaflet y 向下、緯度向上）
+      let nlng = p.lng + (dx / d) * base;
+      const snap = nearestRoad(nlat, nlng);
+      if (snap) {
+        const k = snap.dist < 0.0004 ? 0.55 : snap.dist < 0.0012 ? 0.3 : 0.12;  // 路上→小巷→建築區的貼路力
+        nlat += (snap.lat - nlat) * k;
+        nlng += (snap.lng - nlng) * k;
+      }
+      p.lat = nlat; p.lng = nlng;
       S.hero.moving = true;
-      emit('heroMove', S.hero.pos);
+      emit('heroMove', p);
     } else if (S.hero.moving) {
       S.hero.moving = false;
       emit('heroMove', S.hero.pos);
