@@ -46,9 +46,11 @@ const Sim = (() => {
       jobs: {}, nextGen: 0, ended: null,
       buried: 0, buriedRefund: 0, raidCount: 0, bribeCount: 0,  // V2.5
       act2: false, evidence: 0, hqRaidFail: 0, cells: null,     // V3.0 第二幕
+      hero: { pos: { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 } },  // V3.5 主角（出生偏移到總部西南側，避開門口巡查熱點）
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
     for (let i = 0; i < START.missions; i++) genMission();
+    armHeroGrace();  // V3.5：新局進場盤查免疫
   }
 
   // ===== V2.7/V2.8：勢力範圍——瓣狀形狀，隨建築／信任／警方進度進退 =====
@@ -489,6 +491,69 @@ const Sim = (() => {
     after();
   }
 
+  // ===== V3.5：主角（玩家化身）——WASD 操控、碰警車觸發盤查 =====
+  const keys = {};  // 按住的鍵：{ up, down, left, right }
+  function setKey(dir, on) { keys[dir] = !!on; }
+  let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
+  function armHeroGrace() { heroCheckCd = gameMin() + 12; }  // 進場 12 遊戲分鐘免疫（主角出生在總部，總部周邊必有巡查車）
+
+  function heroTick() {
+    if (!S || !S.hero) return;
+    const sp = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
+    let dx = 0, dy = 0;
+    if (keys.left) dx -= 1; if (keys.right) dx += 1;
+    if (keys.up) dy -= 1; if (keys.down) dy += 1;
+    if (dx || dy) {
+      const d = Math.hypot(dx, dy);
+      S.hero.pos.lat += (dy / d) * sp;
+      S.hero.pos.lng += (dx / d) * sp;
+      S.hero.moving = true;
+      emit('heroMove', S.hero.pos);
+    } else if (S.hero.moving) {
+      S.hero.moving = false;
+      emit('heroMove', S.hero.pos);
+    }
+    // 巡查車互動：靠近才「有機率」被攔下問話（冷卻 30 遊戲分鐘；不是每次靠近都攔）
+    if (!paused && !S.ended && gameMin() >= heroCheckCd) {
+      const pos = GameMap.copPositions();
+      for (const c of pos) {
+        if (Math.hypot(c.lat - S.hero.pos.lat, c.lng - S.hero.pos.lng) < 0.0004) {
+          if (Math.random() < 0.35) {   // 撞上了，但七成機率對方沒注意你——放行
+            heroCheckCd = gameMin() + 30;
+            paused = true;
+            emit('heroCheck', S.hero.pos);
+          } else {
+            heroCheckCd = gameMin() + 6;  // 這次沒事，短冷卻後再算
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // 例行查崗抉擇（heroCheck 卡的三個選項）
+  function resolveHeroCheck(idx) {
+    paused = false;
+    if (idx === 0) {           // 低調路過：小機率被記一筆
+      if (Math.random() < 0.25) { addSus(5); emit('toast', { icon: '👁️', text: '對方多看了你兩眼，記了一筆（懷疑 +5）' }); }
+      else emit('toast', { icon: '🚶', text: '你低頭滑手機走過去，對方沒理你' });
+    } else if (idx === 1) {    // 快步離開：速度判定（腿力），失敗被登記
+      const mem = S.members[0];
+      const p = 0.45 + (mem ? mem.legs : 3) * 0.06 + (S.gear.car ? 0.15 : 0);
+      if (Math.random() < Math.min(0.9, p)) emit('toast', { icon: '🏃', text: '你轉進巷子甩掉了這次查崗' });
+      else {
+        S.police = clamp100(S.police + 4); addSus(10);
+        S.hero.pos = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
+        emit('toast', { icon: '🚨', text: '沒走成——被登記資料後放回（風聲 +4、懷疑 +10）' });
+      }
+    } else {                   // 亮出線人身分：風聲微增、組織信任微降
+      S.police = clamp100(S.police + 3);
+      S.trust = clamp100(S.trust - 2);
+      emit('toast', { icon: '🪪', text: '你亮了亮手機裡的聯絡人——對方放行（風聲 +3、組織信任 -2）' });
+    }
+    after();
+  }
+
   // ===== 每秒 tick（1 真實秒 = 1 遊戲分鐘）=====
   function tick() {
     if (!S || S.ended || paused) return;
@@ -508,6 +573,9 @@ const Sim = (() => {
         if (moveToward(j, HQ.lat, HQ.lng)) arriveHome(j);
       }
     }
+
+    // 主角：操控移動＋警車盤查（放最後，移動不被暫停邏輯吃掉）
+    heroTick();
 
     // 快跑途中跳事件（只在工作階段）
     for (const id in S.jobs) {
@@ -783,10 +851,16 @@ const Sim = (() => {
     if (!S.evidence) S.evidence = 0;
     if (!S.hqRaidFail) S.hqRaidFail = 0;
     if (S.cells === undefined) S.cells = null;
+    if (S.hero === undefined || !S.hero) S.hero = { pos: { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 } };  // V3.5 主角欄位（出生偏移避開門口巡查熱點）
+    if (S.hero && Math.abs(S.hero.pos.lat - HQ.lat) < 1e-9 && Math.abs(S.hero.pos.lng - HQ.lng) < 1e-9) {
+      // 舊存檔主角正好在總部原點：一併偏移，避免進場即被盤查
+      S.hero.pos = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
+    }
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
     if (S.raid && S.raid.phase === 'fight') paused = true;
+    armHeroGrace();  // V3.5：進場盤查免疫（12 遊戲分鐘）
     for (const id in S.jobs) {
       const j = S.jobs[id];
       if (!j.leg) { j.leg = 'work'; j.pos = { lat: j.m.lat, lng: j.m.lng }; j.settled = false; }
@@ -892,5 +966,6 @@ const Sim = (() => {
     state: () => S,
     isPaused: () => paused,
     hour, policeDensity, clockStr, gameMin,
+    setKey, resolveHeroCheck,  // V3.5 主角操控與盤查
   };
 })();

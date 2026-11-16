@@ -125,7 +125,7 @@ const GameMap = (() => {
         if (zone === 'police' || zone === 'contested') dens2 *= TURF.COP_BOOST_POLICE;
         else if (zone === 'park') dens2 *= TURF.COP_SUPPRESS_PARK;
         for (let k = 0; k < 2; k++) {
-          if (hash3(cx, cy, 7 + k) < dens2 * 0.45) {
+          if (hash3(cx, cy, 7 + k) < dens2 * 0.9) {  // V3.5：0.45→0.9——主角走動視角下高倍率時視野格子太少，原門檻會開空窗（碰撞互動需要車常駐可見）
             const e = pts[(hash3(cx, cy * 3 + k, 11) * pts.length) | 0];
             const dir = hash3(cx * 3 + k, cy, 29) < 0.5 ? 1 : -1;
             const t = Sim.gameMin();

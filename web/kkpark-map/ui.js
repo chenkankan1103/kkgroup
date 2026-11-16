@@ -43,6 +43,7 @@ const UI = (() => {
     Sim.on('roster', renderRoster);
     Sim.on('toast', showToast);
     Sim.on('event', showEvent);
+    Sim.on('heroCheck', showHeroCheck);  // V3.5：主角碰警車 → 盤查卡
     Sim.on('raid', showRaidPlan);
     Sim.on('raidResult', showRaidResult);
     Sim.on('hqRaidResult', showHqRaidResult);
@@ -101,8 +102,12 @@ const UI = (() => {
     GameMap.flyTo(HQ.lat, HQ.lng, 12);
     if (!hasSeenHow()) setTimeout(showHow, 900);
     if (Sim.state().ended) showEnding(Sim.state().ended);
+    GameMap.bindKeys();  // V3.5：WASD/方向鍵操控主角
     if (boot.loopId) clearInterval(boot.loopId);
-    boot.loopId = setInterval(() => { Sim.tick(); onTick(); }, TICK_MS);
+    boot.loopId = setInterval(() => {
+      Sim.tick(); onTick();
+      GameMap.followTick();  // V3.5：鏡頭跟隨主角
+    }, TICK_MS);
   }
 
   function renderAll() {
@@ -138,6 +143,7 @@ const UI = (() => {
     $('fillSus').style.width = S.sus + '%';
     if (S.min % 60 === 0) GameMap.refreshPolice();
     GameMap.renderJobs(S.jobs, S.members);
+    GameMap.renderHero();  // V3.5：主角 marker（走動＋動畫切換）
     GameMap.tickCops();  // V2.6：警車巡邏滑行（內部自己節流到每 5 遊戲分鐘）
     GameMap.renderTurf();  // V2.7：勢力圈半徑跟著信任／進度走（變動才重繪）
     // V2：風聲預警 chip（發動後由攻堅卡接手）
@@ -370,6 +376,14 @@ const UI = (() => {
     $('eventModal').classList.remove('hidden');
     $('evA').onclick = () => { $('eventModal').classList.add('hidden'); Sim.chooseEvent(0); };
     $('evB').onclick = () => { $('eventModal').classList.add('hidden'); Sim.chooseEvent(1); };
+  }
+
+  // V3.5：主角盤查卡（碰警車）——三選項
+  function showHeroCheck() {
+    $('heroCheckModal').classList.remove('hidden');
+    $('hcCalm').onclick = () => { $('heroCheckModal').classList.add('hidden'); Sim.resolveHeroCheck(0); };
+    $('hcRun').onclick = () => { $('heroCheckModal').classList.add('hidden'); Sim.resolveHeroCheck(1); };
+    $('hcBadge').onclick = () => { $('heroCheckModal').classList.add('hidden'); Sim.resolveHeroCheck(2); };
   }
 
   /* ===== V2 警方攻堅：策略決策卡 → 戰報（同一個 modal 換內容） ===== */
