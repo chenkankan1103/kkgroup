@@ -521,7 +521,9 @@ knowledge/_wiki/Inbox/
 # （update_tunnel_url_event.sh → auto_update_webhook_v2.py 這條 webhook 自動修復鏈必須進 git）
 scheduled_tasks/*
 !scheduled_tasks/auto_update_webhook_v2.py
-scripts/
+scripts/*
+!scripts/tests/
+!scripts/tests/**
 shared/db/data/
 status/
 web/api/game/
