@@ -39,7 +39,25 @@ const MISSION_TYPES = {
     desc: '跟警方線人碰面交資料——餵警察的活',
     dur: [45, 90], pay: [0, 0], risk: 0.35, trust: -9,
   },
+  // V3.6：認識新朋友後解鎖的新任務來源（小活、錢穩、風險低）
+  side: {
+    name: '街頭幫忙', icon: '🧹', stat: 'legs', statName: '腿力',
+    desc: '幫街坊鄰居跑腿——小事，但錢穩',
+    dur: [40, 90], pay: [2000, 6000], risk: 0.18, trust: 4,
+  },
 };
+// V3.6 互動地標（POI）：主角走近才互動。座標是粗略方位，執行時吸附到最近街道節點
+// kind：coin 撿到小錢／friend 認識新朋友（解鎖新任務來源）／bet 試手氣／random 隨機小事件卡
+const POI_DEFS = [
+  { id: 'stall',   icon: '🍢', name: '夜市攤',   kind: 'coin',   lat: 22.6165, lng: 120.3045 },
+  { id: 'temple',  icon: '⛩️', name: '小廟',     kind: 'friend', lat: 22.6280, lng: 120.2960 },
+  { id: 'store',   icon: '🏪', name: '便利商店', kind: 'random', lat: 22.6105, lng: 120.3125 },
+  { id: 'lotto',   icon: '🎫', name: '彩券行',   kind: 'bet',    lat: 22.6245, lng: 120.3085 },
+  { id: 'spa',     icon: '💆', name: '養生館',   kind: 'random', lat: 22.6050, lng: 120.3035 },
+  { id: 'betel',   icon: '🥥', name: '檳榔攤',   kind: 'coin',   lat: 22.6330, lng: 120.3050 },
+  { id: 'news',    icon: '📰', name: '書報亭',   kind: 'random', lat: 22.6190, lng: 120.2915 },
+  { id: 'cafe',    icon: '🦤', name: '巷口咖啡', kind: 'random', lat: 22.6090, lng: 120.2955 },
+];
 const MISSION_POOL = [
   { k: 'scam', w: 30 }, { k: 'pickup', w: 30 }, { k: 'cargo', w: 30 }, { k: 'intel', w: 10 },
 ];
