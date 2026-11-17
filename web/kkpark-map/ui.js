@@ -44,6 +44,7 @@ const UI = (() => {
     Sim.on('toast', showToast);
     Sim.on('event', showEvent);
     Sim.on('heroCheck', showHeroCheck);  // V3.5：主角碰警車 → 盤查卡
+    Sim.on('heroEvent', showHeroEvent);  // V3.6-A：互動地標 → 主角小事件卡
     Sim.on('raid', showRaidPlan);
     Sim.on('raidResult', showRaidResult);
     Sim.on('hqRaidResult', showHqRaidResult);
@@ -52,6 +53,7 @@ const UI = (() => {
     GameMap.cb.missionClick = openMission;
     GameMap.cb.hqClick = openHqRaid;
     GameMap.cb.cellClick = openCellPanel;
+    GameMap.cb.poiClick = (poiId) => Sim.triggerPoi(poiId);   // V3.6-A 互動地標
 
     const hasSave = !!Save.read();
     $('btnContinue').classList.toggle('hidden', !hasSave);
@@ -144,6 +146,8 @@ const UI = (() => {
     if (S.min % 60 === 0) GameMap.refreshPolice();
     GameMap.renderJobs(S.jobs, S.members);
     GameMap.renderHero();  // V3.5：主角 marker（走動＋動畫切換）
+    GameMap.renderPois();  // V3.6-A：互動地標 marker
+    GameMap.updatePoiButtons();  // V3.6-A：主角走近才浮出「進去看看？」
     GameMap.tickCops();  // V2.6：警車巡邏滑行（內部自己節流到每 5 遊戲分鐘）
     GameMap.renderTurf();  // V2.7：勢力圈半徑跟著信任／進度走（變動才重繪）
     // V2：風聲預警 chip（發動後由攻堅卡接手）
@@ -384,6 +388,20 @@ const UI = (() => {
     $('hcCalm').onclick = () => { $('heroCheckModal').classList.add('hidden'); Sim.resolveHeroCheck(0); };
     $('hcRun').onclick = () => { $('heroCheckModal').classList.add('hidden'); Sim.resolveHeroCheck(1); };
     $('hcBadge').onclick = () => { $('heroCheckModal').classList.add('hidden'); Sim.resolveHeroCheck(2); };
+  }
+
+  // V3.6-A 主角小事件卡（互動地標）——複用同一張事件 modal，只換內容與結算
+  function showHeroEvent(a) {
+    const ev = a && a.ev;
+    if (!ev) return;
+    $('evIcon').textContent = ev.icon;
+    $('evTitle').textContent = ev.title;
+    $('evText').textContent = ev.text;
+    $('evA').textContent = '👉 ' + ev.A.label;
+    $('evB').textContent = ev.B.label;
+    $('eventModal').classList.remove('hidden');
+    $('evA').onclick = () => { $('eventModal').classList.add('hidden'); Sim.chooseHeroEvent(0); };
+    $('evB').onclick = () => { $('eventModal').classList.add('hidden'); Sim.chooseHeroEvent(1); };
   }
 
   /* ===== V2 警方攻堅：策略決策卡 → 戰報（同一個 modal 換內容） ===== */

@@ -85,6 +85,23 @@ body {
   pointer-events: none; z-index: 2;
 }
 .mk-job-wrap.me .mk-job { border-color: var(--gold); box-shadow: 0 0 8px rgba(255, 225, 77, 0.45); }
+/* V3.6-A 互動地標：地標名牌常駐，走近才浮出「進去看看？」按鈕 */
+.mk-poi-wrap { background: none; border: none; }
+.mk-poi {
+  position: relative; display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(18, 23, 34, 0.88); border: 1px solid var(--line);
+  border-radius: 12px; padding: 2px 8px; font-size: 12px; color: var(--dim);
+  white-space: nowrap; cursor: pointer;
+}
+.mk-poi:hover { border-color: var(--cyan); color: var(--txt); }
+.mk-poi .poi-ic { font-size: 14px; }
+.mk-poi .poi-nm { font-weight: 600; }
+.mk-poi .poi-enter {
+  margin-left: 2px; font-size: 11px; cursor: pointer;
+  background: var(--cyan); color: #06121a; border: none;
+  border-radius: 9px; padding: 1px 7px; font-weight: 700;
+}
+.mk-poi .poi-enter:hover { background: var(--gold); }
 /* V3.5 主角（玩家化身）：無 pill、純小人＋腳下光環，走大地圖中心 */
 .mk-hero-wrap { background: none; border: none; }
 .mk-hero { position: relative; width: 0; height: 0; }
