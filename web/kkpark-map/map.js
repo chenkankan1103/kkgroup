@@ -3,7 +3,7 @@
 
 const GameMap = (() => {
   let map = null;
-  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, mAct2;
+  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, mAct2, mPoi;
   const cb = {}; // 對外回呼：missionClick
   const jobMarkers = {}; // memId -> marker（出勤；不重建，才能用 CSS transition 平滑走路）
   const homeMarkers = {}; // memId -> marker（待命站總部周圍）
@@ -43,6 +43,7 @@ const GameMap = (() => {
     mRaid = L.layerGroup().addTo(map);
     mTurf = L.layerGroup().addTo(map);
     mAct2 = L.layerGroup().addTo(map);
+    mPoi = L.layerGroup().addTo(map);
 
     L.marker([HQ.lat, HQ.lng], {
       icon: divIcon('<div class="mk-hq">🏢<span>園區總部</span></div>', [76, 26]),
@@ -406,6 +407,44 @@ const GameMap = (() => {
       if (img) Avatar.heroIconUrl(wantPose, (url) => { if (url && img.isConnected) img.src = url; });
     }
   }
+
+  // ===== V3.6-A 互動地標（POI）：marker 常駐，主角走近才浮出「進去看看？」 =====
+  const poiMarkers = {};
+  function renderPois() {
+    if (!map) return;
+    const list = (typeof Sim.poiList === 'function') ? Sim.poiList() : [];
+    for (const p of list) {
+      let mk = poiMarkers[p.id];
+      if (!mk) {
+        mk = L.marker([p.lat, p.lng], {
+          icon: divIcon(
+            `<div class="mk-poi"><span class="poi-ic">${p.icon}</span><span class="poi-nm">${p.name}</span>` +
+            `<button class="poi-enter">🚪 進去看看？</button></div>`,
+            [104, 30], 'mk-poi-wrap'
+          ),
+        }).addTo(mPoi);
+        mk.on('click', () => { if (cb.poiClick) cb.poiClick(p.id); });
+        poiMarkers[p.id] = mk;
+      } else {
+        mk.setLatLng([p.lat, p.lng]);
+      }
+    }
+  }
+  // 距離檢查：主角在 POI 附近 → 顯示按鈕；走遠或冷卻中 → 收起
+  function updatePoiButtons() {
+    if (!map || !poiMarkers) return;
+    const S = Sim.state();
+    if (!S || !S.hero) return;
+    const near = (typeof Sim.poiNearHero === 'function') ? Sim.poiNearHero() : null;
+    for (const id in poiMarkers) {
+      const el = poiMarkers[id].getElement();
+      if (!el) continue;
+      const btn = el.querySelector('.poi-enter');
+      if (!btn) continue;
+      const show = !!near && near.id === id;
+      if (show) btn.classList.remove('hidden'); else btn.classList.add('hidden');
+    }
+  }
   function raidAssembly(on) {
     if (!map) return;
     clearRaid();
@@ -490,5 +529,5 @@ const GameMap = (() => {
     }
   }
 
-  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, cb };
+  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, cb };
 })();
