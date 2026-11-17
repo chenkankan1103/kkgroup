@@ -215,6 +215,33 @@ def run(args):
             lat, lng, zoom = args.fly.split(',')
             out['checks']['fly'] = probe.ev(f"GameMap.flyTo({lat}, {lng}, {zoom}); 'flew'")
             time.sleep(args.settle_after_fly)
+        if args.drag:
+            # CDP 真實輸入管線：mousePressed → mouseMoved×N → mouseReleased。
+            # 事件 isTrusted=true，與使用者手勢同層級；可用來驗 Leaflet drag 接線。
+            x1, y1, x2, y2 = (int(v) for v in args.drag.split(','))
+            probe.cmd(
+                'Input.dispatchMouseEvent',
+                {'type': 'mousePressed', 'x': x1, 'y': y1, 'button': 'left', 'clickCount': 1},
+            )
+            steps = 12
+            for i in range(1, steps + 1):
+                probe.cmd(
+                    'Input.dispatchMouseEvent',
+                    {
+                        'type': 'mouseMoved',
+                        'button': 'left',
+                        'buttons': 1,
+                        'x': x1 + (x2 - x1) * i // steps,
+                        'y': y1 + (y2 - y1) * i // steps,
+                    },
+                )
+                time.sleep(0.03)
+            probe.cmd(
+                'Input.dispatchMouseEvent',
+                {'type': 'mouseReleased', 'x': x2, 'y': y2, 'button': 'left', 'clickCount': 1},
+            )
+            time.sleep(0.6)
+            out['checks']['drag'] = 'dispatched'
 
         for chk in checks:
             name = chk.get('name', 'check')
@@ -286,6 +313,7 @@ if __name__ == '__main__':
     ap.add_argument('--cdp-port', type=int, default=0)
     ap.add_argument('--enter', default='btnStartNew', help='進入遊戲的按鈕 id；空字串則不點')
     ap.add_argument('--fly', default='', help='lat,lng,zoom')
+    ap.add_argument('--drag', default='', help='x1,y1,x2,y2 以 CDP 真實輸入管線合成拖曳')
     ap.add_argument('--settle', type=float, default=4.0)
     ap.add_argument('--settle-after-enter', type=float, default=2.5)
     ap.add_argument('--settle-after-fly', type=float, default=5.0)
