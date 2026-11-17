@@ -417,6 +417,7 @@ const GameMap = (() => {
       let mk = poiMarkers[p.id];
       if (!mk) {
         mk = L.marker([p.lat, p.lng], {
+          zIndexOffset: 500,   // 名牌壓過巡查車（預設 0），避免巡邏圖示蓋住地標名
           icon: divIcon(
             `<div class="mk-poi"><span class="poi-ic">${p.icon}</span><span class="poi-nm">${p.name}</span>` +
             `<button class="poi-enter">🚪 進去看看？</button></div>`,

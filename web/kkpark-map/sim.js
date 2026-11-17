@@ -644,7 +644,10 @@ const Sim = (() => {
     const p = poiById(poiId);
     if (!p || !S.hero) return;
     if (gameMin() < p.cd) { emit('toast', { icon: '⏳', text: `${p.name}——你剛才才來過，等會兒再說` }); return; }
-    if (Math.hypot(p.lat - S.hero.pos.lat, p.lng - S.hero.pos.lng) > POI_RANGE) return;
+    if (Math.hypot(p.lat - S.hero.pos.lat, p.lng - S.hero.pos.lng) > POI_RANGE) {
+      emit('toast', { icon: '🚶', text: `太遠了——走過去一點才能看${p.name}` });
+      return;
+    }
     S.poiCd = S.poiCd || {};
     S.poiCd[p.id] = gameMin() + POI_COOLDOWN;
     let ev;
