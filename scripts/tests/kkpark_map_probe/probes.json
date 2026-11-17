@@ -1,0 +1,41 @@
+{
+  "_comment": "kkpark-map 視覺驗證探針集（POI 落地後在這裡追加條目即可）。expr 回傳物件時請用 JSON.stringify 包起來。",
+  "checks": [
+    {
+      "name": "hud",
+      "expr": "JSON.stringify({visible: !document.getElementById('hud').classList.contains('hidden'), money: document.getElementById('hudMoney').textContent.trim(), food: document.getElementById('hudFood').textContent.trim(), clock: document.getElementById('hudClock').textContent.trim(), missions: document.getElementById('misCount').textContent.trim()})"
+    },
+    {
+      "name": "markers",
+      "expr": "JSON.stringify({mis: document.querySelectorAll('.mk-mis').length, hq: document.querySelectorAll('.mk-hq').length, cops: document.querySelectorAll('.cop-icon').length, builds: document.querySelectorAll('.mk-build').length, cells: document.querySelectorAll('.mk-cell').length, heroWrap: document.querySelectorAll('.mk-hero-wrap').length, heroDoll: document.querySelectorAll('.mk-hero-wrap .mk-doll').length, jobDolls: document.querySelectorAll('.mk-job-wrap .mk-doll').length})"
+    },
+    {
+      "name": "dolls",
+      "expr": "JSON.stringify(Array.from(document.querySelectorAll('.mk-doll')).map(function(i){return {complete: i.complete, w: i.naturalWidth, h: i.naturalHeight, animated: /animated/.test(i.src), src: i.src.slice(0, 80)};}))"
+    },
+    {
+      "name": "roster",
+      "expr": "JSON.stringify({cards: document.querySelectorAll('#roster .mem-card').length, dolls: document.querySelectorAll('#roster .ava-doll').length, hidden: document.getElementById('roster').classList.contains('hidden')})"
+    },
+    {
+      "name": "tiles",
+      "expr": "JSON.stringify({loaded: document.querySelectorAll('.leaflet-tile-loaded').length, total: document.querySelectorAll('img.leaflet-tile').length})"
+    },
+    {
+      "name": "overlays_open",
+      "expr": "JSON.stringify(['intro','howto','misPanel','shop','eventModal','heroCheckModal','raidModal','endingModal'].filter(function(id){var e=document.getElementById(id); return e && !e.classList.contains('hidden');}))"
+    },
+    {
+      "name": "viewport",
+      "expr": "JSON.stringify({w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio})"
+    },
+    {
+      "name": "resources",
+      "expr": "JSON.stringify({maple: performance.getEntriesByType('resource').filter(function(r){return r.name.indexOf('maplestory.io')>=0;}).length, api: performance.getEntriesByType('resource').filter(function(r){return r.name.indexOf('/paperdoll')>=0;}).length})"
+    },
+    {
+      "name": "center",
+      "expr": "JSON.stringify(GameMap.getCenter())"
+    }
+  ]
+}
