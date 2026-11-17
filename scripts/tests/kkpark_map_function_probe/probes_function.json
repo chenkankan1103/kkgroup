@@ -1,0 +1,604 @@
+{
+  "_comment": "kkpark-map 功能驗證探針集（A 主角移動／B 貼路行走／C 鏡頭跟隨／D 查崗互動／E 頭像顯示／F 互動地標 POI）。每條＝action(動作) → until(輪詢等待) → expr(取樣) → judge(PASS/FAIL)。",
+  "checks": [
+    {
+      "name": "A1_up",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "按 ArrowUp：緯度增加、幅度 ≈0.0028（V3.5.1 上下翻正）",
+      "action": "(function(){var s=Sim.state();window.__p0={lat:s.hero.pos.lat,lng:s.hero.pos.lng};window.__kkh.press('ArrowUp');return 1;})()",
+      "until": "window.__p0 && Sim.state().hero.pos.lat > window.__p0.lat + 0.0015",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release('ArrowUp');var p=s.hero.pos;return JSON.stringify({delta_lat:+(p.lat-window.__p0.lat).toFixed(6),delta_lng:+(p.lng-window.__p0.lng).toFixed(6)});})()",
+      "judge": [
+        { "path": "delta_lat", "op": "gt", "value": 0.0015 },
+        { "path": "delta_lat", "op": "le", "value": 0.0032 }
+      ]
+    },
+    {
+      "name": "A1_down",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "按 ArrowDown：緯度減少",
+      "action": "(function(){var s=Sim.state();window.__p0={lat:s.hero.pos.lat,lng:s.hero.pos.lng};window.__kkh.press('ArrowDown');return 1;})()",
+      "until": "window.__p0 && Sim.state().hero.pos.lat < window.__p0.lat - 0.0015",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release('ArrowDown');var p=s.hero.pos;return JSON.stringify({delta_lat:+(p.lat-window.__p0.lat).toFixed(6)});})()",
+      "judge": [
+        { "path": "delta_lat", "op": "lt", "value": -0.0015 },
+        { "path": "delta_lat", "op": "ge", "value": -0.0032 }
+      ]
+    },
+    {
+      "name": "A1_left",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "按 ArrowLeft：經度減少",
+      "action": "(function(){var s=Sim.state();window.__p0={lat:s.hero.pos.lat,lng:s.hero.pos.lng};window.__kkh.press('ArrowLeft');return 1;})()",
+      "until": "window.__p0 && Sim.state().hero.pos.lng < window.__p0.lng - 0.0015",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release('ArrowLeft');var p=s.hero.pos;return JSON.stringify({delta_lng:+(p.lng-window.__p0.lng).toFixed(6)});})()",
+      "judge": [
+        { "path": "delta_lng", "op": "lt", "value": -0.0015 },
+        { "path": "delta_lng", "op": "ge", "value": -0.0032 }
+      ]
+    },
+    {
+      "name": "A1_right",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "按 ArrowRight：經度增加",
+      "action": "(function(){var s=Sim.state();window.__p0={lat:s.hero.pos.lat,lng:s.hero.pos.lng};window.__kkh.press('ArrowRight');return 1;})()",
+      "until": "window.__p0 && Sim.state().hero.pos.lng > window.__p0.lng + 0.0015",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release('ArrowRight');var p=s.hero.pos;return JSON.stringify({delta_lng:+(p.lng-window.__p0.lng).toFixed(6)});})()",
+      "judge": [
+        { "path": "delta_lng", "op": "gt", "value": 0.0015 },
+        { "path": "delta_lng", "op": "le", "value": 0.0032 }
+      ]
+    },
+    {
+      "name": "A2_diagonal",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "同時按 Up+Right：兩軸皆增、每軸約 base/√2（對角不加速）",
+      "action": "(function(){var s=Sim.state();window.__p0={lat:s.hero.pos.lat,lng:s.hero.pos.lng};window.__kkh.press('ArrowUp');window.__kkh.press('ArrowRight');return 1;})()",
+      "until": "window.__p0 && Sim.state().hero.pos.lat > window.__p0.lat + 0.001 && Sim.state().hero.pos.lng > window.__p0.lng + 0.001",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release('ArrowUp');window.__kkh.release('ArrowRight');var p=s.hero.pos;return JSON.stringify({d_lat:+(p.lat-window.__p0.lat).toFixed(6),d_lng:+(p.lng-window.__p0.lng).toFixed(6)});})()",
+      "judge": [
+        { "path": "d_lat", "op": "between", "min": 0.001, "max": 0.0028 },
+        { "path": "d_lng", "op": "between", "min": 0.001, "max": 0.0028 }
+      ]
+    },
+    {
+      "name": "A3_moving_while_pressed",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "按住時 hero.moving === true",
+      "action": "(function(){window.__kkh.press('ArrowLeft');return 1;})()",
+      "until": "Sim.state().hero.moving === true",
+      "timeout": 8,
+      "expr": "JSON.stringify({moving:Sim.state().hero.moving})",
+      "judge": [{ "path": "moving", "op": "eq", "value": true }]
+    },
+    {
+      "name": "A3_moving_after_release",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "放開後 hero.moving === false",
+      "action": "(function(){window.__kkh.release('ArrowLeft');return 1;})()",
+      "until": "Sim.state().hero.moving === false",
+      "timeout": 8,
+      "expr": "JSON.stringify({moving:Sim.state().hero.moving})",
+      "judge": [{ "path": "moving", "op": "eq", "value": false }]
+    },
+    {
+      "name": "A4_car_multiplier",
+      "segment": "A",
+      "preset": "no_login",
+      "desc": "gear.car=true 時移動量 ≈0.00532（base×1.9），結束復原",
+      "action": "(function(){var s=Sim.state();s.gear.car=true;window.__p0={lat:s.hero.pos.lat,lng:s.hero.pos.lng};window.__kkh.press('ArrowUp');return 1;})()",
+      "until": "window.__p0 && Sim.state().hero.pos.lat > window.__p0.lat + 0.003",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release('ArrowUp');var d=+(s.hero.pos.lat-window.__p0.lat).toFixed(6);s.gear.car=false;return JSON.stringify({delta_lat:d});})()",
+      "judge": [{ "path": "delta_lat", "op": "between", "min": 0.0048, "max": 0.0058 }]
+    },
+
+    {
+      "name": "B1_place_on_road",
+      "segment": "B",
+      "preset": "no_login",
+      "desc": "放置主角到最近路網點，重測距離應 ≈0",
+      "action": "(function(){var h=Sim.state().hero.pos;var r=window.__kkh.roadDist(h.lat,h.lng);window.__kkh.setHero(r.lat,r.lng);window.__p0={lat:r.lat,lng:r.lng};window.__rf=window.__kkh.roadFrame(r.lat,r.lng);return 1;})()",
+      "expr": "JSON.stringify({road_dist:+window.__kkh.roadDist(Sim.state().hero.pos.lat,Sim.state().hero.pos.lng).dist.toFixed(6),perp_key:window.__rf.perpKey})",
+      "judge": [{ "path": "road_dist", "op": "lt", "value": 0.0001 }]
+    },
+    {
+      "name": "B1_walk_perpendicular_10t",
+      "segment": "B",
+      "preset": "no_login",
+      "desc": "垂直於路走 10 tick：離路網 < 0.020（自由行走會 0.028）→ 貼路生效",
+      "action": "(function(){window.__gm0=Sim.gameMin();window.__kkh.press(window.__rf.perpKey);return 1;})()",
+      "until": "window.__gm0 && Sim.gameMin() >= window.__gm0 + 10",
+      "timeout": 25,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release(window.__rf.perpKey);var p=s.hero.pos;var r=window.__kkh.roadDist(p.lat,p.lng);return JSON.stringify({road_dist:+r.dist.toFixed(6),free_walk:0.028,moved_lat:+(p.lat-window.__p0.lat).toFixed(6)});})()",
+      "judge": [{ "path": "road_dist", "op": "lt", "value": 0.020 }]
+    },
+    {
+      "name": "B2_place_off_road",
+      "segment": "B",
+      "preset": "no_login",
+      "desc": "放置主角到偏離路網 0.002 處（記錄實際距離）",
+      "action": "(function(){var r=window.__rf.point;var lat=r.lat+0.002,lng=r.lng;window.__kkh.setHero(lat,lng);var d=window.__kkh.roadDist(lat,lng).dist;var code=(r.lat<lat)?'ArrowDown':((r.lat>lat)?'ArrowUp':((r.lng<lng)?'ArrowLeft':'ArrowRight'));window.__code=code;return 1;})()",
+      "expr": "JSON.stringify({start_dist:+window.__kkh.roadDist(Sim.state().hero.pos.lat,Sim.state().hero.pos.lng).dist.toFixed(6),code:window.__code})",
+      "judge": [{ "path": "start_dist", "op": "between", "min": 0.001, "max": 0.003 }]
+    },
+    {
+      "name": "B2_pulled_back",
+      "segment": "B",
+      "preset": "no_login",
+      "desc": "朝路網走：被吸附回路上（<0.0008）",
+      "action": "(function(){window.__kkh.press(window.__code);return 1;})()",
+      "until": "window.__kkh.roadDist(Sim.state().hero.pos.lat,Sim.state().hero.pos.lng).dist < 0.0008",
+      "timeout": 20,
+      "expr": "(function(){window.__kkh.release(window.__code);var r=window.__kkh.roadDist(Sim.state().hero.pos.lat,Sim.state().hero.pos.lng);return JSON.stringify({end_dist:+r.dist.toFixed(6),start_dist:0.002});})()",
+      "judge": [{ "path": "end_dist", "op": "lt", "value": 0.0008 }]
+    },
+    {
+      "name": "B3_far_point",
+      "segment": "B",
+      "preset": "no_login",
+      "desc": "找離路網最遠的點（園區周邊 ±0.05°）",
+      "action": "(function(){window.__far=window.__kkh.farFromRoad(22.62,120.30,0.05,0.002);return 1;})()",
+      "expr": "JSON.stringify({far_lat:+window.__far.lat.toFixed(5),far_lng:+window.__far.lng.toFixed(5),far_dist:+window.__far.dist.toFixed(6)})",
+      "judge": [{ "path": "far_dist", "op": "gt", "value": 0.001 }]
+    },
+    {
+      "name": "B3_far_movement",
+      "segment": "B",
+      "preset": "no_login",
+      "desc": "最遠點移動：方向正確；>0.012 時應為精確自由位移 0.0028",
+      "action": "(function(){window.__kkh.setHero(window.__far.lat,window.__far.lng);window.__p0={lat:window.__far.lat,lng:window.__far.lng};window.__kkh.press('ArrowUp');return 1;})()",
+      "until": "window.__p0 && Sim.state().hero.pos.lat > window.__p0.lat + 0.001",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();window.__kkh.release('ArrowUp');var d=+(s.hero.pos.lat-window.__p0.lat).toFixed(6);var far=+window.__far.dist.toFixed(6);var ok=(far>0.012)?(Math.abs(d-0.0028)<0.0002):(d>0.001);return JSON.stringify({delta_lat:d,far_dist:far,ok:ok});})()",
+      "judge": [{ "path": "ok", "op": "eq", "value": true }]
+    },
+
+    {
+      "name": "C1_follow_converge",
+      "segment": "C",
+      "preset": "no_login",
+      "desc": "主角移動後鏡頭收斂（offset < 0.0004）",
+      "action": "(function(){window.__kkh.press('ArrowRight');return 1;})()",
+      "until": "Math.abs(GameMap.getCenter().lat-Sim.state().hero.pos.lat)<0.0004 && Math.abs(GameMap.getCenter().lng-Sim.state().hero.pos.lng)<0.0004",
+      "timeout": 20,
+      "expr": "(function(){window.__kkh.release('ArrowRight');var c=GameMap.getCenter(),p=Sim.state().hero.pos;return JSON.stringify({d_lat:+Math.abs(c.lat-p.lat).toFixed(6),d_lng:+Math.abs(c.lng-p.lng).toFixed(6)});})()",
+      "judge": [
+        { "path": "d_lat", "op": "lt", "value": 0.0004 },
+        { "path": "d_lng", "op": "lt", "value": 0.0004 }
+      ]
+    },
+    {
+      "name": "C2_drag_moves_center",
+      "segment": "C",
+      "preset": "no_login",
+      "desc": "真實滑鼠拖曳：地圖中心被拖走（CDP 合成拖曳確實移動地圖）",
+      "cdp": "drag",
+      "until": "(function(){var c=GameMap.getCenter(),p=Sim.state().hero.pos;return Math.abs(c.lat-p.lat)>0.0005||Math.abs(c.lng-p.lng)>0.0005;})()",
+      "timeout": 8,
+      "expr": "(function(){var c=GameMap.getCenter(),p=Sim.state().hero.pos;return JSON.stringify({off_lat:+Math.abs(c.lat-p.lat).toFixed(6),off_lng:+Math.abs(c.lng-p.lng).toFixed(6)});})()",
+      "judge": [
+        { "path": "off_lat", "op": "gt", "value": 0.0002 },
+        { "path": "off_lng", "op": "gt", "value": 0.0002 }
+      ]
+    },
+    {
+      "name": "C2_settle_after_drag",
+      "segment": "C",
+      "preset": "no_login",
+      "desc": "拖曳後等 3 tick：慣性滑行結束（記錄静止基準點）",
+      "action": "(function(){window.__gm2=Sim.gameMin();return 1;})()",
+      "until": "window.__gm2 && Sim.gameMin() >= window.__gm2 + 3",
+      "timeout": 12,
+      "expr": "(function(){var c=GameMap.getCenter();window.__c1={lat:c.lat,lng:c.lng};window.__gm3=Sim.gameMin();return JSON.stringify({baseline_set:{lat:+window.__c1.lat.toFixed(6)}});})()"
+    },
+    {
+      "name": "C2_no_drift_after_settle",
+      "segment": "C",
+      "preset": "no_login",
+      "desc": "慣性停止後再等 2 tick：中心完全不再動（followHero 已被 dragstart 關閉）",
+      "until": "window.__gm3 && Sim.gameMin() >= window.__gm3 + 2",
+      "timeout": 12,
+      "expr": "(function(){var c=GameMap.getCenter();return JSON.stringify({drift:+(Math.abs(c.lat-window.__c1.lat)+Math.abs(c.lng-window.__c1.lng)).toFixed(6)});})()",
+      "judge": [{ "path": "drift", "op": "le", "value": 0.0004 }]
+    },
+    {
+      "name": "C2_hero_teleport_no_follow",
+      "segment": "C",
+      "preset": "no_login",
+      "desc": "拖曳後傳送主角（不按鍵）等 2 tick：中心沒跟（漂移 ≈ 0.005 減去拖後偏移後仍不收斂）",
+      "action": "(function(){var p=Sim.state().hero.pos;window.__kkh.setHero(p.lat+0.005,p.lng);window.__gm3=Sim.gameMin();return 1;})()",
+      "until": "window.__gm3 && Sim.gameMin() >= window.__gm3 + 2",
+      "timeout": 12,
+      "expr": "(function(){var c=GameMap.getCenter(),p=Sim.state().hero.pos;var off=+(Math.abs(c.lat-p.lat)+Math.abs(c.lng-p.lng)).toFixed(6);return JSON.stringify({off_after_teleport:off,still_off:off>0.003});})()",
+      "judge": [{ "path": "still_off", "op": "eq", "value": true }]
+    },
+    {
+      "name": "C2_follow_resumes_on_key",
+      "segment": "C",
+      "preset": "no_login",
+      "desc": "再按方向鍵：跟隨恢復（offset < 0.0004）",
+      "action": "(function(){window.__kkh.press('ArrowUp');return 1;})()",
+      "until": "Math.abs(GameMap.getCenter().lat-Sim.state().hero.pos.lat)<0.0004",
+      "timeout": 15,
+      "expr": "(function(){window.__kkh.release('ArrowUp');var c=GameMap.getCenter(),p=Sim.state().hero.pos;return JSON.stringify({d_lat:+Math.abs(c.lat-p.lat).toFixed(6)});})()",
+      "judge": [{ "path": "d_lat", "op": "lt", "value": 0.0004 }]
+    },
+
+    {
+      "name": "D0_skip_grace",
+      "segment": "D",
+      "preset": "no_login",
+      "desc": "跳過進場盤查免疫（12 遊戲分鐘），並等巡查車 spawn 完成",
+      "action": "(function(){Sim.state().min+=13;return 1;})()",
+      "until": "GameMap.copPositions().length > 0",
+      "timeout": 20,
+      "expr": "JSON.stringify({gameMin:Sim.gameMin(),cop_count:GameMap.copPositions().length})",
+      "judge": [{ "path": "cop_count", "op": "ge", "value": 1 }]
+    },
+    {
+      "name": "D1_hero_check_triggers",
+      "segment": "D",
+      "preset": "no_login",
+      "desc": "主角疊上巡查車 → 彈盤查卡、遊戲暫停",
+      "action": "(function(){Math.random=(function(){return 0.1;});var c=window.__kkh.nearestCop();window.__kkh.setHero(c.lat,c.lng);return 1;})()",
+      "until": "document.getElementById('heroCheckModal') && !document.getElementById('heroCheckModal').classList.contains('hidden')",
+      "timeout": 15,
+      "expr": "JSON.stringify({visible:!document.getElementById('heroCheckModal').classList.contains('hidden'),paused:Sim.isPaused()})",
+      "judge": [
+        { "path": "visible", "op": "eq", "value": true },
+        { "path": "paused", "op": "eq", "value": true }
+      ]
+    },
+    {
+      "name": "D2_calm_choice",
+      "segment": "D",
+      "preset": "no_login",
+      "desc": "低調路過（random=0.1<0.25）：懷疑 +5、卡片關閉、暫停解除",
+      "action": "(function(){window.__sus0=Sim.state().sus;document.getElementById('hcCalm').click();return 1;})()",
+      "expr": "JSON.stringify({sus_delta:Sim.state().sus-window.__sus0,hidden:document.getElementById('heroCheckModal').classList.contains('hidden'),paused:Sim.isPaused()})",
+      "judge": [
+        { "path": "sus_delta", "op": "eq", "value": 5 },
+        { "path": "hidden", "op": "eq", "value": true },
+        { "path": "paused", "op": "eq", "value": false }
+      ]
+    },
+    {
+      "name": "D3_cooldown_holds",
+      "segment": "D",
+      "preset": "no_login",
+      "desc": "冷卻期內再疊巡查車：不重彈（30 分冷卻）",
+      "action": "(function(){var c=window.__kkh.nearestCop();window.__kkh.setHero(c.lat,c.lng);Sim.state().min+=5;window.__gm3=Sim.gameMin();return 1;})()",
+      "until": "window.__gm3 && Sim.gameMin() >= window.__gm3 + 4",
+      "timeout": 12,
+      "expr": "JSON.stringify({still_hidden:document.getElementById('heroCheckModal').classList.contains('hidden')})",
+      "judge": [{ "path": "still_hidden", "op": "eq", "value": true }]
+    },
+    {
+      "name": "D4_badge_choice",
+      "segment": "D",
+      "preset": "no_login",
+      "desc": "亮出線人身分：風聲 +3、組織信任 -2",
+      "action": "(function(){Sim.state().min+=31;Math.random=(function(){return 0.1;});var c=window.__kkh.nearestCop();window.__kkh.setHero(c.lat,c.lng);return 1;})()",
+      "until": "document.getElementById('heroCheckModal') && !document.getElementById('heroCheckModal').classList.contains('hidden')",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();var p0=s.police,t0=s.trust;document.getElementById('hcBadge').click();return JSON.stringify({police_delta:s.police-p0,trust_delta:s.trust-t0,paused:Sim.isPaused()});})()",
+      "judge": [
+        { "path": "police_delta", "op": "eq", "value": 3 },
+        { "path": "trust_delta", "op": "eq", "value": -2 }
+      ]
+    },
+    {
+      "name": "D5_run_fail_path",
+      "segment": "D",
+      "preset": "no_login",
+      "desc": "快步離開失敗（random=0.99）：懷疑 +10、風聲 +4、主角送回總部偏移點",
+      "action": "(function(){Sim.state().min+=31;Math.random=(function(){return 0.1;});var c=window.__kkh.nearestCop();window.__kkh.setHero(c.lat,c.lng);return 1;})()",
+      "until": "document.getElementById('heroCheckModal') && !document.getElementById('heroCheckModal').classList.contains('hidden')",
+      "timeout": 15,
+      "expr": "(function(){var s=Sim.state();var s0=s.sus,p0=s.police;Math.random=(function(){return 0.99;});document.getElementById('hcRun').click();var h=s.hero.pos;var home=Math.abs(h.lat-(HQ.lat+0.0012))<0.00001&&Math.abs(h.lng-(HQ.lng-0.0009))<0.00001;return JSON.stringify({sus_delta:s.sus-s0,police_delta:s.police-p0,back_home:home});})()",
+      "judge": [
+        { "path": "sus_delta", "op": "eq", "value": 10 },
+        { "path": "police_delta", "op": "eq", "value": 4 },
+        { "path": "back_home", "op": "eq", "value": true }
+      ]
+    },
+
+    {
+      "name": "F0_poi_inventory",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "poiList() 回 8 筆、四種 kind 齊全",
+      "expr": "(function(){var ps=Sim.poiList();var by={};ps.forEach(function(p){if(!by[p.kind])by[p.kind]=p.id;});window.__poi=by;return JSON.stringify({count:ps.length,kinds:Object.keys(by).sort().join(',')});})()",
+      "judge": [
+        { "path": "count", "op": "eq", "value": 8 },
+        { "path": "kinds", "op": "eq", "value": "bet,coin,friend,random" }
+      ]
+    },
+    {
+      "name": "F1_near_returns_poi",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "hero 移到 POI 0.0004° 內 → poiNearHero() 回該 POI",
+      "action": "(function(){var p=Sim.poiList().filter(function(x){return x.id===window.__poi.coin;})[0];window.__kkh.setHero(p.lat+0.0004,p.lng);return 1;})()",
+      "expr": "(function(){var n=Sim.poiNearHero();return JSON.stringify({ok:!!n&&n.id===window.__poi.coin,near_id:n?n.id:null});})()",
+      "judge": [{ "path": "ok", "op": "eq", "value": true }]
+    },
+    {
+      "name": "F1_far_returns_null",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "hero 移到 0.05° 外 → poiNearHero() 回 null",
+      "action": "(function(){var p=Sim.poiList().filter(function(x){return x.id===window.__poi.coin;})[0];window.__kkh.setHero(p.lat+0.05,p.lng);return 1;})()",
+      "expr": "JSON.stringify({near:Sim.poiNearHero()})",
+      "judge": [{ "path": "near", "op": "eq", "value": null }]
+    },
+    {
+      "name": "F2_coin_trigger",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "coin 地標觸發：heroEvent 發出、paused=true、A/B 齊全",
+      "action": "(function(){window.__gmCoin=Sim.gameMin();var p=Sim.poiList().filter(function(x){return x.id===window.__poi.coin;})[0];window.__kkh.setHero(p.lat+0.0004,p.lng);Sim.triggerPoi(window.__poi.coin);return 1;})()",
+      "until": "Sim.state().heroEvent !== null",
+      "timeout": 8,
+      "expr": "(function(){var e=Sim.state().heroEvent;window.__amt=e.A.amt;return JSON.stringify({paused:Sim.isPaused(),has_a:!!e.A,has_b:!!e.B,kind:e.A.kind,amt:e.A.amt});})()",
+      "judge": [
+        { "path": "paused", "op": "eq", "value": true },
+        { "path": "has_a", "op": "eq", "value": true },
+        { "path": "has_b", "op": "eq", "value": true },
+        { "path": "kind", "op": "eq", "value": "coin" },
+        { "path": "amt", "op": "between", "min": 400, "max": 2000 }
+      ]
+    },
+    {
+      "name": "F3_coin_settle",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "coin 選 A：錢 += amt（與事件卡顯示金額一致）、暫停解除、事件清空",
+      "expr": "(function(){var s=Sim.state();var m0=s.money;Sim.chooseHeroEvent(0);return JSON.stringify({ok:s.money-m0===window.__amt,paused:Sim.isPaused(),heroEvent:s.heroEvent});})()",
+      "judge": [
+        { "path": "ok", "op": "eq", "value": true },
+        { "path": "paused", "op": "eq", "value": false },
+        { "path": "heroEvent", "op": "eq", "value": null }
+      ]
+    },
+    {
+      "name": "F4_cooldown_value",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "S.poiCd[coin] === 觸發當下 gameMin + 180",
+      "expr": "(function(){var s=Sim.state();var cd=s.poiCd[window.__poi.coin];return JSON.stringify({cd:cd,expected:window.__gmCoin+180,ok:cd===window.__gmCoin+180});})()",
+      "judge": [{ "path": "ok", "op": "eq", "value": true }]
+    },
+    {
+      "name": "F4_cooldown_blocks_trigger",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "冷卻中再 triggerPoi：不進事件（heroEvent null、paused false）",
+      "expr": "(function(){Sim.triggerPoi(window.__poi.coin);var s=Sim.state();return JSON.stringify({heroEvent:s.heroEvent,paused:Sim.isPaused()});})()",
+      "judge": [
+        { "path": "heroEvent", "op": "eq", "value": null },
+        { "path": "paused", "op": "eq", "value": false }
+      ]
+    },
+    {
+      "name": "F4_cooldown_hides_poi",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "冷卻期內 poiNearHero() 不回該 POI",
+      "expr": "(function(){var n=Sim.poiNearHero();return JSON.stringify({near_id:n?n.id:null});})()",
+      "judge": [{ "path": "near_id", "op": "eq", "value": null }]
+    },
+    {
+      "name": "F4_cooldown_expires",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "遊戲時間 +181 分後冷卻解除，poiNearHero() 恢復",
+      "action": "(function(){Sim.state().min+=181;return 1;})()",
+      "expr": "(function(){var n=Sim.poiNearHero();return JSON.stringify({ok:!!n&&n.id===window.__poi.coin});})()",
+      "judge": [{ "path": "ok", "op": "eq", "value": true }]
+    },
+    {
+      "name": "F2_friend_trigger",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "friend 地標觸發：事件卡發出",
+      "action": "(function(){var p=Sim.poiList().filter(function(x){return x.id===window.__poi.friend;})[0];window.__kkh.setHero(p.lat+0.0004,p.lng);Sim.triggerPoi(window.__poi.friend);return 1;})()",
+      "until": "Sim.state().heroEvent !== null",
+      "timeout": 8,
+      "expr": "(function(){var e=Sim.state().heroEvent;return JSON.stringify({paused:Sim.isPaused(),kind:e.A.kind});})()",
+      "judge": [
+        { "path": "paused", "op": "eq", "value": true },
+        { "path": "kind", "op": "eq", "value": "friend" }
+      ]
+    },
+    {
+      "name": "F3_friend_settle",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "friend 選 A：S.poiUnlock=true（解鎖新任務來源）",
+      "expr": "(function(){var s=Sim.state();Sim.chooseHeroEvent(0);return JSON.stringify({poi_unlock:s.poiUnlock,paused:Sim.isPaused()});})()",
+      "judge": [
+        { "path": "poi_unlock", "op": "eq", "value": true },
+        { "path": "paused", "op": "eq", "value": false }
+      ]
+    },
+    {
+      "name": "F3_friend_unlocks_side_missions",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "解鎖後任務池含 side 類型（權重池出現新來源）",
+      "expr": "(function(){var s=Sim.state();Sim.genMission();var has=s.missions.some(function(m){return m.type==='side';});return JSON.stringify({has_side:has,missions:s.missions.length});})()",
+      "judge": [{ "path": "has_side", "op": "eq", "value": true }]
+    },
+    {
+      "name": "F2_bet_trigger",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "bet 地標觸發：事件卡發出",
+      "action": "(function(){var p=Sim.poiList().filter(function(x){return x.id===window.__poi.bet;})[0];window.__kkh.setHero(p.lat+0.0004,p.lng);Sim.triggerPoi(window.__poi.bet);return 1;})()",
+      "until": "Sim.state().heroEvent !== null",
+      "timeout": 8,
+      "expr": "(function(){var e=Sim.state().heroEvent;return JSON.stringify({paused:Sim.isPaused(),kind:e.A.kind});})()",
+      "judge": [
+        { "path": "paused", "op": "eq", "value": true },
+        { "path": "kind", "op": "eq", "value": "bet" }
+      ]
+    },
+    {
+      "name": "F3_bet_settle",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "bet 選 A：金額變動（方向隨機，只驗有變化）、暫停解除",
+      "expr": "(function(){var s=Sim.state();var m0=s.money;Sim.chooseHeroEvent(0);return JSON.stringify({money_delta:s.money-m0,paused:Sim.isPaused()});})()",
+      "judge": [
+        { "path": "money_delta", "op": "ne", "value": 0 },
+        { "path": "paused", "op": "eq", "value": false }
+      ]
+    },
+    {
+      "name": "F2_random_trigger",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "random 地標觸發：從三張池抽一張（kind ∈ chat/errand/luck）",
+      "action": "(function(){var p=Sim.poiList().filter(function(x){return x.id===window.__poi.random;})[0];window.__kkh.setHero(p.lat+0.0004,p.lng);Sim.triggerPoi(window.__poi.random);return 1;})()",
+      "until": "Sim.state().heroEvent !== null",
+      "timeout": 8,
+      "expr": "(function(){var e=Sim.state().heroEvent;var ok=['chat','errand','luck'].indexOf(e.A.kind)>=0;return JSON.stringify({kind:e.A.kind,has_b:!!e.B,ok:ok});})()",
+      "judge": [
+        { "path": "ok", "op": "eq", "value": true },
+        { "path": "has_b", "op": "eq", "value": true }
+      ]
+    },
+    {
+      "name": "F3_random_settle",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "random 選 A：不拋錯、暫停解除",
+      "expr": "(function(){var s=Sim.state();Sim.chooseHeroEvent(0);return JSON.stringify({paused:Sim.isPaused(),heroEvent:s.heroEvent});})()",
+      "judge": [
+        { "path": "paused", "op": "eq", "value": false },
+        { "path": "heroEvent", "op": "eq", "value": null }
+      ]
+    },
+    {
+      "name": "F5_nonexistent_id",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "triggerPoi 對不存在的 id 不拋錯、無副作用",
+      "expr": "(function(){Sim.triggerPoi('no_such_poi');var s=Sim.state();return JSON.stringify({no_throw:true,heroEvent:s.heroEvent,paused:Sim.isPaused()});})()",
+      "judge": [
+        { "path": "no_throw", "op": "eq", "value": true },
+        { "path": "heroEvent", "op": "eq", "value": null },
+        { "path": "paused", "op": "eq", "value": false }
+      ]
+    },
+    {
+      "name": "F7_old_save_compat",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "舊存檔（無 poiCd/poiUnlock）載入：欄位自動補、poiList 正常",
+      "action": "(function(){var old=JSON.parse(JSON.stringify(Sim.state()));delete old.poiCd;delete old.poiUnlock;localStorage.setItem('kkpark_map_save_v1',JSON.stringify(old));window.__load_ok=Sim.load();return 1;})()",
+      "expr": "(function(){var s=Sim.state();return JSON.stringify({load_ok:window.__load_ok,poi_cd_empty:JSON.stringify(s.poiCd)==='{}',poi_unlock:s.poiUnlock===false,pois:Sim.poiList().length,game_min:Sim.gameMin()});})()",
+      "judge": [
+        { "path": "load_ok", "op": "eq", "value": true },
+        { "path": "poi_cd_empty", "op": "eq", "value": true },
+        { "path": "poi_unlock", "op": "eq", "value": true },
+        { "path": "pois", "op": "eq", "value": 8 }
+      ]
+    },
+    {
+      "name": "F8_pois_snapped",
+      "segment": "F",
+      "preset": "no_login",
+      "desc": "8 筆 POI 座標全部吸附到路網節點（dist < 0.0001）",
+      "expr": "(function(){var ps=Sim.poiList();var bad=0;ps.forEach(function(p){var r=window.__kkh.roadDist(p.lat,p.lng);if(!r||r.dist>0.0001)bad++;});return JSON.stringify({total:ps.length,not_snapped:bad});})()",
+      "judge": [
+        { "path": "total", "op": "eq", "value": 8 },
+        { "path": "not_snapped", "op": "eq", "value": 0 }
+      ]
+    },
+
+    {
+      "name": "E1_no_login_slot_emoji",
+      "segment": "E",
+      "preset": "no_login",
+      "desc": "未登入：主角 marker 存在、.mk-doll=0、槽位維持 🙂（預期行為）",
+      "expr": "JSON.stringify({hero_wrap:document.querySelectorAll('.mk-hero-wrap').length,slot:(document.querySelector('.mk-hero-wrap .mk-doll-slot')||{}).textContent,doll:document.querySelectorAll('.mk-hero-wrap .mk-doll').length})",
+      "judge": [
+        { "path": "hero_wrap", "op": "ge", "value": 1 },
+        { "path": "doll", "op": "eq", "value": 0 },
+        { "path": "slot", "op": "eq", "value": "🙂" }
+      ]
+    },
+    {
+      "name": "E2_login_doll_present",
+      "segment": "E",
+      "preset": "login_doll",
+      "desc": "登入態（快取預置）：.mk-doll > 0、圖已載入、來源 maplestory.io",
+      "until": "document.querySelectorAll('.mk-hero-wrap .mk-doll').length > 0",
+      "timeout": 20,
+      "expr": "JSON.stringify({hero_wrap:document.querySelectorAll('.mk-hero-wrap').length,doll:document.querySelectorAll('.mk-hero-wrap .mk-doll').length,complete:(document.querySelector('.mk-hero-wrap .mk-doll')||{}).complete,src:((document.querySelector('.mk-hero-wrap .mk-doll')||{}).src||'').slice(0,60)})",
+      "judge": [
+        { "path": "hero_wrap", "op": "ge", "value": 1 },
+        { "path": "doll", "op": "ge", "value": 1 },
+        { "path": "complete", "op": "eq", "value": true },
+        { "path": "src", "op": "contains", "value": "maplestory.io" }
+      ]
+    },
+    {
+      "name": "E3_login_doll_uses_cached_look",
+      "segment": "E",
+      "preset": "login_doll",
+      "desc": "主角圖用預置快取的造型 itemId（20699），非 NPC 池",
+      "expr": "(function(){var d=Array.from(document.querySelectorAll('.mk-hero-wrap .mk-doll'));return JSON.stringify({cached:d.filter(function(i){return (i.src||'').indexOf('20699')>=0;}).length,npc:d.filter(function(i){return (i.src||'').indexOf('20005')>=0;}).length});})()",
+      "judge": [
+        { "path": "cached", "op": "ge", "value": 1 },
+        { "path": "npc", "op": "eq", "value": 0 }
+      ]
+    },
+    {
+      "name": "E4_protagonist_only",
+      "segment": "E",
+      "preset": "login_doll",
+      "desc": "玩家造型只套名冊第一位成員，其他成員穿 NPC 池",
+      "until": "document.querySelectorAll('.mk-job-wrap .mk-doll').length > 0",
+      "timeout": 25,
+      "expr": "(function(){var d=Array.from(document.querySelectorAll('.mk-job-wrap .mk-doll'));var cached=d.filter(function(i){return (i.src||'').indexOf('20699')>=0;}).length;var m=Sim.state().members.length;return JSON.stringify({members:m,cached:cached,npc:d.length-cached,ok:cached===1&&d.length-cached===m-1});})()",
+      "judge": [{ "path": "ok", "op": "eq", "value": true }]
+    },
+    {
+      "name": "E5_dummy_id_no_doll",
+      "segment": "E",
+      "preset": "dummy_id",
+      "desc": "dummy ID 走 API → 404 → 不建 .mk-doll（反證）",
+      "until": "document.querySelectorAll('.mk-hero-wrap').length > 0",
+      "timeout": 20,
+      "expr": "JSON.stringify({hero_wrap:document.querySelectorAll('.mk-hero-wrap').length,doll:document.querySelectorAll('.mk-hero-wrap .mk-doll').length,slot:(document.querySelector('.mk-hero-wrap .mk-doll-slot')||{}).textContent})",
+      "judge": [
+        { "path": "hero_wrap", "op": "ge", "value": 1 },
+        { "path": "doll", "op": "eq", "value": 0 },
+        { "path": "slot", "op": "eq", "value": "🙂" }
+      ]
+    },
+    {
+      "name": "E6_dummy_id_api_404",
+      "segment": "E",
+      "preset": "dummy_id",
+      "desc": "dummy ID 確實打了正式 API（404 記錄在 baseline.expected_paperdoll_404）",
+      "expr": "JSON.stringify({note:'see baseline.expected_paperdoll_404'})"
+    }
+  ]
+}
