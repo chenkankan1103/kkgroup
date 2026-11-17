@@ -47,6 +47,7 @@ const Sim = (() => {
       buried: 0, buriedRefund: 0, raidCount: 0, bribeCount: 0,  // V2.5
       act2: false, evidence: 0, hqRaidFail: 0, cells: null,     // V3.0 第二幕
       hero: { pos: { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 } },  // V3.5 主角（出生偏移到總部西南側，避開門口巡查熱點）
+      poiCd: {}, poiUnlock: false,   // V3.6-A 互動地標：各地標冷卻時間、新任務來源解鎖旗標
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
     for (let i = 0; i < START.missions; i++) genMission();
@@ -226,6 +227,12 @@ const Sim = (() => {
   }
 
   // ===== 任務生成：在指定點附近撒（沒給就撒在園區總部附近）=====
+  // V3.6-A 任務池：解鎖「街頭幫忙」後多出新任務來源（權重 18）
+  function missionPool() {
+    if (S && S.poiUnlock) return MISSION_POOL.concat([{ k: 'side', w: 18 }]);
+    return MISSION_POOL;
+  }
+
   function genMission(center) {
     const c = center || HQ;
     // V3.0：掃蕩撒在存活據點附近、蒐證撒在總部附近，其餘照舊撒園區附近
@@ -241,14 +248,16 @@ const Sim = (() => {
     if (S.act2) {
       tk = 'sweep';
     } else if (S.police >= ACT2.UNLOCK_POLICE) {
-      const total = MISSION_POOL.reduce((s, x) => s + x.w, 0);
-      let r = Math.random() * (total + 25), pool = MISSION_POOL.concat([{ k: 'evidence', w: 25 }]);
+      const base = missionPool();
+      const total = base.reduce((s, x) => s + x.w, 0);
+      let r = Math.random() * (total + 25), pool = base.concat([{ k: 'evidence', w: 25 }]);
       tk = 'scam';
       for (const x of pool) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
     } else {
-      const total = MISSION_POOL.reduce((s, x) => s + x.w, 0);
+      const pool = missionPool();          // V3.6-A：解鎖後會多出新任務來源
+      const total = pool.reduce((s, x) => s + x.w, 0);
       let r = Math.random() * total; tk = 'scam';
-      for (const x of MISSION_POOL) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
+      for (const x of pool) { r -= x.w; if (r <= 0) { tk = x.k; break; } }
     }
     const t = MISSION_TYPES[tk] || ACT2_MISSION_TYPES[tk];
     const heat = 0.35 + Math.random() * 0.65;
@@ -600,6 +609,132 @@ const Sim = (() => {
     after();
   }
 
+  // ===== V3.6-A 互動地標（POI）：主角走近 → 進去看看 → 小事件 =====
+  const POI_COOLDOWN = 180;   // 同一個地標的冷卻（遊戲分鐘，約 3 遊戲小時）
+  const POI_RANGE = 0.0016;   // 互動距離（度）≈ 180m
+
+  // POI 清單：座標吸附到最近街道節點（跟主角走路同一套路網，POI 就落在街上）
+  function poiList() {
+    if (!S) return [];
+    return POI_DEFS.map((d) => {
+      const snap = nearestRoad(d.lat, d.lng);
+      return {
+        id: d.id, icon: d.icon, name: d.name, kind: d.kind,
+        lat: snap ? snap.lat : d.lat, lng: snap ? snap.lng : d.lng,
+        cd: (S.poiCd && S.poiCd[d.id]) || 0,
+      };
+    });
+  }
+  function poiById(id) {
+    for (const p of poiList()) if (p.id === id) return p;
+    return null;
+  }
+  // 主角走近某地標 → 回傳該地標（不在範圍或冷卻中回 null）
+  function poiNearHero() {
+    if (!S || !S.hero) return null;
+    for (const p of poiList()) {
+      if (gameMin() < p.cd) continue;
+      if (Math.hypot(p.lat - S.hero.pos.lat, p.lng - S.hero.pos.lng) < POI_RANGE) return p;
+    }
+    return null;
+  }
+
+  // 觸發地標事件：依 kind 產生主角事件卡（複用現有事件 modal 的 A/B 兩選項）
+  function triggerPoi(poiId) {
+    const p = poiById(poiId);
+    if (!p || !S.hero) return;
+    if (gameMin() < p.cd) { emit('toast', { icon: '⏳', text: `${p.name}——你剛才才來過，等會兒再說` }); return; }
+    if (Math.hypot(p.lat - S.hero.pos.lat, p.lng - S.hero.pos.lng) > POI_RANGE) return;
+    S.poiCd = S.poiCd || {};
+    S.poiCd[p.id] = gameMin() + POI_COOLDOWN;
+    let ev;
+    if (p.kind === 'coin') {
+      const amt = 400 + ((Math.random() * 1600) | 0);
+      ev = {
+        icon: p.icon, title: `${p.name}：地上有東西`,
+        text: `路邊的紙箱旁邊有張紙鈔，${amt} 元，不像是誰掉的。`,
+        A: { label: `撿起來（+$${amt}）`, kind: 'coin', amt },
+        B: { label: '不是自己的不拿', kind: 'skip' },
+      };
+    } else if (p.kind === 'friend') {
+      ev = {
+        icon: p.icon, title: `${p.name}：有人跟你搭話`,
+        text: '一個街坊模樣的人湊過來，問你附近哪裡缺人跑腿。他說他有門路，可以介紹活兒給你。',
+        A: { label: '交換號碼（解鎖新任務來源）', kind: 'friend' },
+        B: { label: '含糊帶過', kind: 'skip' },
+      };
+    } else if (p.kind === 'bet') {
+      ev = {
+        icon: p.icon, title: `${p.name}：試手氣`,
+        text: '櫃台上剩幾張沒刮的券。老闆說今天手氣正，要不要來一張？',
+        A: { label: '買一張试试手氣', kind: 'bet' },
+        B: { label: '看看就好', kind: 'skip' },
+      };
+    } else {   // random：從主角小事池抽一張
+      const pool = [
+        {
+          icon: '🧋', title: `${p.name}：撞見熟人`,
+          text: '一個熟識的傢伙正低頭吃東西，看到你招手要你過去坐。',
+          A: { label: '坐下來聊聊（情報 + 信任）', kind: 'chat' },
+          B: { label: '假裝沒看見', kind: 'skip' },
+        },
+        {
+          icon: '📦', title: `${p.name}：有人託你帶東西`,
+          text: '旁邊有人抱著紙箱問你能不能幫忙送到附近的一戶人家，跑一趟就有酬勞。',
+          A: { label: '接下來跑一趟（+錢、信任 +）', kind: 'errand' },
+          B: { label: '搖頭拒絕', kind: 'skip' },
+        },
+        {
+          icon: '🕯️', title: `${p.name}：店裡的燈忽然滅了`,
+          text: '燈滅了幾秒，恢復的時候櫃台少了一點東西，裡面的人盯著你。',
+          A: { label: '裝作什麼都沒看到', kind: 'luck' },
+          B: { label: '趁亂離開', kind: 'skip' },
+        },
+      ];
+      ev = pool[(Math.random() * pool.length) | 0];
+    }
+    S.heroEvent = ev;
+    paused = true;
+    emit('heroEvent', { ev, poi: p });
+    after();
+  }
+
+  // 主角事件抉擇（複用事件 modal 的 A/B）
+  function chooseHeroEvent(idx) {
+    const ev = S.heroEvent;
+    S.heroEvent = null;
+    paused = false;
+    if (!ev) return;
+    const c = idx === 0 ? ev.A : ev.B;
+    if (c.kind === 'coin') {
+      S.money += c.amt;
+      emit('toast', { icon: '💰', text: `撿到 $${c.amt}——今天運氣不錯` });
+    } else if (c.kind === 'friend') {
+      S.poiUnlock = true;                       // 解鎖新任務來源（街頭幫忙）
+      emit('toast', { icon: '🤝', text: '你留了個號碼——往後會有人託你跑腿（解鎖新任務來源）' });
+    } else if (c.kind === 'bet') {
+      const win = Math.random() < 0.3;
+      const amt = win ? 3000 + ((Math.random() * 7000) | 0) : -600;
+      S.money = Math.max(0, S.money + amt);
+      emit('toast', { icon: win ? '🎉' : '😐', text: win ? `手氣不錯！刮出 $${amt}` : '沒中——小輸 $600' });
+    } else if (c.kind === 'chat') {
+      addSus(-4);
+      S.trust = clamp100(S.trust + 2);
+      emit('toast', { icon: '💬', text: '你們有一搭沒一搭聊了幾句——好像打聽到一些事（懷疑 -4、信任 +2）' });
+    } else if (c.kind === 'errand') {
+      const amt = 1200 + ((Math.random() * 2800) | 0);
+      S.money += amt;
+      S.trust = clamp100(S.trust + 2);
+      emit('toast', { icon: '📦', text: `你跑了一趟交貨——拿到 $${amt}（信任 +2）` });
+    } else if (c.kind === 'luck') {
+      if (Math.random() < 0.5) { addSus(6); emit('toast', { icon: '👀', text: '你裝得太不自然，被多看了一眼（懷疑 +6）' }); }
+      else emit('toast', { icon: '😅', text: '沒人注意你——你裝得很像路過而已' });
+    } else {
+      emit('toast', { icon: '🚶', text: '你沒停下腳步，轉身走開了' });
+    }
+    after();
+  }
+
   // ===== 每秒 tick（1 真實秒 = 1 遊戲分鐘）=====
   function tick() {
     if (!S || S.ended || paused) return;
@@ -902,6 +1037,9 @@ const Sim = (() => {
       // 舊存檔主角正好在總部原點：一併偏移，避免進場即被盤查
       S.hero.pos = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
     }
+    // V3.6-A 舊存檔補 POI 欄位
+    if (!S.poiCd) S.poiCd = {};
+    if (S.poiUnlock === undefined) S.poiUnlock = false;
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
@@ -1013,5 +1151,6 @@ const Sim = (() => {
     isPaused: () => paused,
     hour, policeDensity, clockStr, gameMin,
     setKey, resolveHeroCheck,  // V3.5 主角操控與盤查
+    poiList, poiNearHero, triggerPoi, chooseHeroEvent,  // V3.6-A 互動地標
   };
 })();
