@@ -10,7 +10,11 @@
 前置預置（--preset）：
   no_login  : 教學已看 + 無存檔 + 移除登入態（預設）
   login_doll: no_login 再加 kkpark_discord_id 與 kkpark_map_avatar_cache_v1 快取（免打正式 API 即可渲染主角造型）
+  login_api : 只寫 kkpark_discord_id 並清掉快取 → 強制走正式 API（端到端驗證）
   tut_only  : 只標記教學已看 + 無存檔
+
+Discord ID 一律由 --uid 或環境變數 KKPARK_DISCORD_ID 注入，腳本內不得寫死真實 ID
+（kkgroup 是公開 repo，commit 進去的真實 Discord ID 等於公開發布）。
 
 探針檔格式（JSON，見同目錄 probes.json）：
   {"checks": [
@@ -63,6 +67,12 @@ def build_preset_inject(preset, uid):
             f"    '{uid}': {{ t: Date.now(), d: {{ face: 20005, hair: 30120, skin: 12000,",
             '                                 top: 1040014, bottom: 1060096, shoes: 1072005 } }',
             '  }));',
+        ]
+    elif preset == 'login_api':
+        # 只寫 ID 並清掉快取 → fetchPaperdoll 必須打正式 API（端到端驗證用）
+        lines += [
+            f"  localStorage.setItem('kkpark_discord_id', '{uid}');",
+            "  localStorage.removeItem('kkpark_map_avatar_cache_v1');",
         ]
     elif preset == 'no_login':
         lines.append("  localStorage.removeItem('kkpark_discord_id');")
@@ -261,8 +271,17 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--probes', default=str(DEFAULT_PROBES))
     ap.add_argument('--root', default=str(GAME_DIR))
-    ap.add_argument('--preset', default='no_login', choices=['no_login', 'login_doll', 'tut_only'])
-    ap.add_argument('--uid', default='123456789012345678')
+    ap.add_argument(
+        '--preset',
+        default='no_login',
+        choices=['no_login', 'login_doll', 'login_api', 'tut_only'],
+    )
+    ap.add_argument(
+        '--uid',
+        default=os.environ.get('KKPARK_DISCORD_ID', '123456789012345678'),
+        help='Discord 使用者 ID；預設取環境變數 KKPARK_DISCORD_ID。'
+        '真實 ID 請用執行時參數／環境變數注入，不要寫進任何要 commit 的檔案',
+    )
     ap.add_argument('--port', type=int, default=0)
     ap.add_argument('--cdp-port', type=int, default=0)
     ap.add_argument('--enter', default='btnStartNew', help='進入遊戲的按鈕 id；空字串則不點')

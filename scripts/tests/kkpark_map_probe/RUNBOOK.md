@@ -11,6 +11,26 @@
 
 執行期產物（瀏覽器 profile、截圖）落在系統 temp，不污染 repo。
 
+## 分工
+
+- **本目錄（`kkpark_map_probe/`）＝視覺探針**：地圖呈現、marker 渲染、圖磚、破圖、
+  版面與可見性等「看得見的部分」，以 DOM 數據面驗收為主。
+- **兄弟目錄（`kkpark_map_function_probe/`）＝功能探針**：A-E 功能行為的動態驗證，
+  由測試員維護。兩邊檔案不重疊，各自獨立分支，最後由協調者統一合併到 main。
+
+共用同一套 headless Edge + CDP 做法；本目錄的 `kkpark_probe.py` 是兩邊都能沿用的基礎設施，
+不必等瀏覽器面板（preview_start）在分類器故障時恢復。
+
+## 資料衛生（重要）
+
+kkgroup 是公開 repo，**真實 Discord ID 絕對不能寫進任何要 commit 的檔案**——
+commit 進去的真實 ID 等於公開發布那個人的 ID。
+
+- 真實 ID 一律用執行時參數／環境變數注入：`--uid <id>` 或 `KKPARK_DISCORD_ID=<id>`
+- 已 commit 的版本預設值是合成 ID（`123456789012345678`），preset 預設走
+  `no_login` 或快取預置，不會碰正式 API
+- 走正式 API 的端到端驗證用 `--preset login_api`（只寫 ID、清掉快取，強制打 API）
+
 ## 管線做什麼
 
 靜態 server（自動挑 port）＋ headless Edge（唯一 profile）＋ CDP：
@@ -28,11 +48,13 @@
 |---|---|---|
 | `no_login` | 一般視覺驗證 | 教學已看 + 清存檔 + 移除登入態 |
 | `login_doll` | **要驗主角紙娃娃** | 上面＋`kkpark_discord_id`＋`kkpark_map_avatar_cache_v1` 快取 |
+| `login_api` | 端到端驗證（真的打正式 API） | 只寫 `kkpark_discord_id`＋清掉快取 |
 | `tut_only` | 只跳教學 | 教學已看 + 清存檔 |
 
 `login_doll` 的重點：預置快取命中後 `fetchPaperdoll` 直接回物件，**不打正式 API**
 （未知 ID 走 API 會 404），所以不依賴 VM 資料庫狀態，也不受 5 分鐘負快取影響。
-走正式 API 才需要真實存在於 VM 資料庫的 Discord ID（5-25 位數）。
+`login_api` 則相反：清掉快取強制走正式 API，需要真實存在於 VM 資料庫的 Discord ID
+（5-25 位數），且 ID 要用 `--uid`／`KKPARK_DISCORD_ID` 注入，不要寫進檔案。
 
 ## 常用指令
 
@@ -77,6 +99,8 @@ python scripts/tests/kkpark_map_probe/kkpark_probe.py --shot "%TEMP%\kkpark_shot
 5. **崩掉的腳本會留下孤兒 Edge 行程**（finally 沒跑到）→ 下次用新 port/profile
 6. **favicon.ico 404 是正常的**：用 Network domain 抓 404 URL 再排除 favicon，
    不要只看 console 文字（文字不含 URL）
+7. **curl 打 maplestory.io 的 URL 必須加 `-g`**：URL 裡的 `{...}` 會被 curl 當成
+   globbing 展開成一串請求、全部回 400，還會拖到 120s timeout
 
 ## 環境事實
 
