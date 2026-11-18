@@ -29,6 +29,8 @@ const UI = (() => {
   }
 
   function boot() {
+    const gv = document.getElementById('gameVersion');
+    if (gv && typeof GAME_VERSION !== 'undefined') gv.textContent = GAME_VERSION;
     GameMap.init();
     // V3.4：OAuth 回跳（?auth_token=…）→ 驗 token 存 my → 直接進遊戲（有存檔續玩、沒有開新局）
     Avatar.handleOAuthReturn().then((uid) => {
