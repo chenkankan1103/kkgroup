@@ -526,7 +526,8 @@ const GameMap = (() => {
     const h = S.hero.pos;
     const c = map.getCenter();
     if (Math.abs(h.lat - c.lat) > 0.0004 || Math.abs(h.lng - c.lng) > 0.0004) {
-      map.panTo([h.lat, h.lng], { animate: true, duration: 0.5 });
+      // V3.7：animate:false 硬跟——主角 marker 已有 1s CSS 補間，鏡頭再緩動會互相追趕微抖
+      map.panTo([h.lat, h.lng], { animate: false });
     }
   }
 
