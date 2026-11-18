@@ -509,7 +509,9 @@ const Sim = (() => {
   function setKey(dir, on) { keys[dir] = !!on; }
   let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
   const OFFROAD_DIST = 0.0012;   // 離最近街道點超過此距離（~130m）＝離路（路網點間距大，走在兩點間的路段上不可誤判）
-  const OFFROAD_SLOW = 0.5;      // 離路減速係數（速度打 5 折，QA 實玩後再調）
+  const OFFROAD_SLOW = 0.35;     // 離路減速係數（V3.7.1：0.5→0.35，QA 實玩對比仍不足）
+  let heroStall = false;         // 移動中跨進離路的第一步頓挫旗標
+  let heroWasOffRoad = false;    // 上一 tick 的離路狀態（頓挫邊緣判定用）
   function armHeroGrace() { heroCheckCd = gameMin() + 12; }  // 進場 12 遊戲分鐘免疫（主角出生在總部，總部周邊必有巡查車）
 
   // ── V3.5.1 貼路行走：路網點格子索引（400m 格，跟 map.js 同款），最近點查詢 ──
@@ -551,16 +553,25 @@ const Sim = (() => {
   function heroTick() {
     if (!S || !S.hero) return;
     let base = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
-    // V3.7 離路減速：離最近街道超過閾值＝在建築/巷弄裡鑽，速度打 5 折（路上全速，
+    // V3.7 離路減速：離最近街道超過閾值＝在建築/巷弄裡鑽，速度打折（路上全速，
     // 切進建築明顯變黏——用速度對比取代建築遮擋的體感設計；吸附是拉回力度、減速是速度懲罰，兩者獨立）
     const here = nearestRoad(S.hero.pos.lat, S.hero.pos.lng);
     const offRoad = here && here.dist > OFFROAD_DIST;
     if (offRoad) base *= OFFROAD_SLOW;
+    // V3.7.1 頓挫：移動中跨越「路上→離路」邊界的第 0 步停一拍（跳過位移）——
+    // 「擋」的體感核心是進入那一刻頓一下。綁在移動分支裡判斷（不綁狀態翻轉：
+    // 瞬移後的閒置 tick 會先消費掉翻轉邊緣，移動分支才能捕捉「按住鍵撞進建築」的瞬間）
     S.hero.offRoad = !!offRoad;   // 給視覺提示層（marker 變暗）用
     let dx = 0, dy = 0;
     if (keys.left) dx -= 1; if (keys.right) dx += 1;
     if (keys.up) dy -= 1; if (keys.down) dy += 1;
     if (dx || dy) {
+      // V3.7.1 頓挫：移動中從「路上」跨進「離路」的第一步停一拍
+      if (offRoad && !heroWasOffRoad && !heroStall) {
+        heroStall = true;
+        return;   // 這一 tick 完全不動（0.5 秒感的頓挫）
+      }
+      heroStall = false;
       // 貼路行走：往輸入方向走，但位置吸附到最近的路網點（跟巡查車同一套路網）；
       // 離路網越遠＝在巷弄／建築裡鑽，越慢（街区感），吸附力道隨距離衰減
       const d = Math.hypot(dx, dy);
@@ -577,11 +588,14 @@ const Sim = (() => {
       }
       p.lat = nlat; p.lng = nlng;
       S.hero.moving = true;
+      S.hero.stopping = false;   // V3.7.1：重新走動，停步補間解除（還原 1s 補間）
       emit('heroMove', p);
     } else if (S.hero.moving) {
       S.hero.moving = false;
+      S.hero.stopping = true;   // V3.7.1：停步補間縮短（0.4s），map.js 依此切 class——鬆鍵急停不冰面
       emit('heroMove', S.hero.pos);
     }
+    heroWasOffRoad = !!offRoad;   // 記錄本 tick 狀態，下一 tick 的頓挫邊緣判定用
     // 巡查車互動：靠近才「有機率」被攔下問話（冷卻 30 遊戲分鐘；不是每次靠近都攔）
     if (!paused && !S.ended && gameMin() >= heroCheckCd) {
       const pos = GameMap.copPositions();

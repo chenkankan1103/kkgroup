@@ -408,7 +408,11 @@ const GameMap = (() => {
     }
     // V3.7 離路減速的視覺提示：主角輕微變暗（offRoad 狀態切 class）
     const hel = heroMarker.getElement();
-    if (hel) hel.classList.toggle('hero-offroad', !!S.hero.offRoad);
+    if (hel) {
+      hel.classList.toggle('hero-offroad', !!S.hero.offRoad);
+      // V3.7.1 停步補間：鬆鍵急停 0.4s（走路維持 1s）；再走動由 sim 清 stopping
+      hel.classList.toggle('hero-stopping', !!S.hero.stopping && !S.hero.moving);
+    }
   }
 
   // ===== V3.6-A 互動地標（POI）：marker 常駐，主角走近才浮出「進去看看？」 =====
@@ -471,13 +475,26 @@ const GameMap = (() => {
     if (near && !immersive) {
       immersive = true;
       document.body.classList.add('immersed');
-      map.flyTo([pos.lat, pos.lng], IMMERSE_ZOOM, { duration: 1.1 });
-      followHero = true;
+      // V3.7.1：UI 收合改 inline style 直接寫——CSS class 組 transition 在某些環境下
+      // 過渡凍結（computed 恆 1），inline 是任何環境都生效的路；視覺靠 CSS transition 平滑
+      setUiDim(true);
+      // 跟隨權：只在「玩家沒有主動拖開鏡頭」時跟回主角（尊重拖曳暫停跟隨）
+      if (followHero) map.flyTo([pos.lat, pos.lng], IMMERSE_ZOOM, { duration: 1.1 });
     } else if (!near && immersive) {
       immersive = false;
       document.body.classList.remove('immersed');
+      setUiDim(false);
       map.flyTo([pos.lat, pos.lng], WANDER_ZOOM, { duration: 1.1 });
     }
+  }
+  // V3.7.1：HUD/名冊淡入淡出（inline opacity；transition 交給既有 CSS 規則）
+  function setUiDim(dim) {
+    const hud = document.getElementById('hud');
+    const roster = document.getElementById('roster');
+    if (hud) hud.style.opacity = dim ? '0.08' : '';
+    if (roster) roster.style.opacity = dim ? '0' : '';
+    if (hud) hud.style.pointerEvents = dim ? 'none' : '';
+    if (roster) roster.style.pointerEvents = dim ? 'none' : '';
   }
   function raidAssembly(on) {
     if (!map) return;
