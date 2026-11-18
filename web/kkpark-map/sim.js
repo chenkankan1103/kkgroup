@@ -504,6 +504,8 @@ const Sim = (() => {
   const keys = {};  // 按住的鍵：{ up, down, left, right }
   function setKey(dir, on) { keys[dir] = !!on; }
   let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
+  const OFFROAD_DIST = 0.0004;   // 離最近街道超過此距離（~45m）＝離路狀態
+  const OFFROAD_SLOW = 0.5;      // 離路減速係數（速度打 5 折，QA 實玩後再調）
   function armHeroGrace() { heroCheckCd = gameMin() + 12; }  // 進場 12 遊戲分鐘免疫（主角出生在總部，總部周邊必有巡查車）
 
   // ── V3.5.1 貼路行走：路網點格子索引（400m 格，跟 map.js 同款），最近點查詢 ──
@@ -544,7 +546,13 @@ const Sim = (() => {
 
   function heroTick() {
     if (!S || !S.hero) return;
-    const base = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
+    let base = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
+    // V3.7 離路減速：離最近街道超過閾值＝在建築/巷弄裡鑽，速度打 5 折（路上全速，
+    // 切進建築明顯變黏——用速度對比取代建築遮擋的體感設計；吸附是拉回力度、減速是速度懲罰，兩者獨立）
+    const here = nearestRoad(S.hero.pos.lat, S.hero.pos.lng);
+    const offRoad = here && here.dist > OFFROAD_DIST;
+    if (offRoad) base *= OFFROAD_SLOW;
+    S.hero.offRoad = !!offRoad;   // 給視覺提示層（marker 變暗）用
     let dx = 0, dy = 0;
     if (keys.left) dx -= 1; if (keys.right) dx += 1;
     if (keys.up) dy -= 1; if (keys.down) dy += 1;

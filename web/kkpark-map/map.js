@@ -406,6 +406,9 @@ const GameMap = (() => {
       const img = el && el.querySelector('.mk-doll');
       if (img) Avatar.heroIconUrl(wantPose, (url) => { if (url && img.isConnected) img.src = url; });
     }
+    // V3.7 離路減速的視覺提示：主角輕微變暗（offRoad 狀態切 class）
+    const hel = heroMarker.getElement();
+    if (hel) hel.classList.toggle('hero-offroad', !!S.hero.offRoad);
   }
 
   // ===== V3.6-A 互動地標（POI）：marker 常駐，主角走近才浮出「進去看看？」 =====

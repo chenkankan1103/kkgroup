@@ -108,6 +108,9 @@ body {
    縮放動畫期間關閉，避免跟 Leaflet 的 transform 打架 */
 .mk-hero-wrap { transition: transform 1s linear; }
 .leaflet-zoom-anim .mk-hero-wrap { transition: none; }
+/* V3.7 離路減速的視覺提示：主角在建築/巷弄裡輕微變暗 */
+.mk-hero-wrap.hero-offroad .mk-hero { opacity: 0.72; filter: saturate(0.8); }
+.mk-hero { transition: opacity 0.6s, filter 0.6s; }
 .mk-hero { position: relative; width: 0; height: 0; }
 .mk-hero .mk-doll {
   position: absolute; left: -12px; bottom: -20px;
