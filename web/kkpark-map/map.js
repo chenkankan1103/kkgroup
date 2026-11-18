@@ -26,12 +26,12 @@ const GameMap = (() => {
   function init() {
     if (map) return;
     map = L.map('map', {
-      zoomControl: true, minZoom: 8, maxZoom: 16,
+      zoomControl: true, minZoom: 8, maxZoom: 18,
       maxBounds: TW.bounds, maxBoundsViscosity: 0.8,
     });
     map.setView(TW.center, TW.zoom);
     L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 16,
+      maxZoom: 18, maxNativeZoom: 16,   // V3.7：17-18 為拉伸放大（貼近模式用），16 以上瓦片不再縮小
       attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, (c) OpenStreetMap contributors',
     }).addTo(map);
 
@@ -406,6 +406,9 @@ const GameMap = (() => {
       const img = el && el.querySelector('.mk-doll');
       if (img) Avatar.heroIconUrl(wantPose, (url) => { if (url && img.isConnected) img.src = url; });
     }
+    // V3.7 離路減速的視覺提示：主角輕微變暗（offRoad 狀態切 class）
+    const hel = heroMarker.getElement();
+    if (hel) hel.classList.toggle('hero-offroad', !!S.hero.offRoad);
   }
 
   // ===== V3.6-A 互動地標（POI）：marker 常駐，主角走近才浮出「進去看看？」 =====
@@ -444,6 +447,36 @@ const GameMap = (() => {
       if (!btn) continue;
       const show = !!near && near.id === id;
       if (show) btn.classList.remove('hidden'); else btn.classList.add('hidden');
+    }
+  }
+
+  // ===== V3.7 貼近模式（immersion）：主角進入任務點/POI 互動半徑 → zoom 17＋收 UI；
+  // 離開半徑 → 回 zoom 14、UI 回來。純 zoom/UI 切換，不是第二場景 =====
+  let immersive = false;
+  const IMMERSE_ZOOM = 17, WANDER_ZOOM = 14;
+  function immersionTick() {
+    if (!map) return;
+    const S = Sim.state();
+    if (!S || !S.hero) return;
+    // 目標清單：任務釘＋POI（跟查崗/互動同一組半徑語意，用較寬的進場半徑）
+    let near = false;
+    const pos = S.hero.pos;
+    for (const m of S.missions) {
+      if (Math.hypot(m.lat - pos.lat, m.lng - pos.lng) < 0.0016) { near = true; break; }
+    }
+    if (!near && typeof Sim.poiNearHero === 'function') {
+      const p = Sim.poiNearHero();
+      if (p) near = true;
+    }
+    if (near && !immersive) {
+      immersive = true;
+      document.body.classList.add('immersed');
+      map.flyTo([pos.lat, pos.lng], IMMERSE_ZOOM, { duration: 1.1 });
+      followHero = true;
+    } else if (!near && immersive) {
+      immersive = false;
+      document.body.classList.remove('immersed');
+      map.flyTo([pos.lat, pos.lng], WANDER_ZOOM, { duration: 1.1 });
     }
   }
   function raidAssembly(on) {
@@ -526,9 +559,10 @@ const GameMap = (() => {
     const h = S.hero.pos;
     const c = map.getCenter();
     if (Math.abs(h.lat - c.lat) > 0.0004 || Math.abs(h.lng - c.lng) > 0.0004) {
-      map.panTo([h.lat, h.lng], { animate: true, duration: 0.5 });
+      // V3.7：animate:false 硬跟——主角 marker 已有 1s CSS 補間，鏡頭再緩動會互相追趕微抖
+      map.panTo([h.lat, h.lng], { animate: false });
     }
   }
 
-  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, cb };
+  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, immersionTick, cb };
 })();

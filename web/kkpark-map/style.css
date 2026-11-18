@@ -104,6 +104,13 @@ body {
 .mk-poi .poi-enter:hover { background: var(--gold); }
 /* V3.5 主角（玩家化身）：無 pill、純小人＋腳下光環，走大地圖中心 */
 .mk-hero-wrap { background: none; border: none; }
+/* V3.7：主角走路補間——tick 落點間由瀏覽器補成 1 秒滑行（跟巡查車 .mk-job-wrap.mv 同款）；
+   縮放動畫期間關閉，避免跟 Leaflet 的 transform 打架 */
+.mk-hero-wrap { transition: transform 1s linear; }
+.leaflet-zoom-anim .mk-hero-wrap { transition: none; }
+/* V3.7 離路減速的視覺提示：主角在建築/巷弄裡輕微變暗 */
+.mk-hero-wrap.hero-offroad .mk-hero { opacity: 0.72; filter: saturate(0.8); }
+.mk-hero { transition: opacity 0.6s, filter 0.6s; }
 .mk-hero { position: relative; width: 0; height: 0; }
 .mk-hero .mk-doll {
   position: absolute; left: -12px; bottom: -20px;
@@ -151,7 +158,11 @@ body {
   background: rgba(18, 23, 34, 0.95); border: 1px solid var(--green);
   border-radius: 8px; padding: 2px 8px; white-space: nowrap;
   box-shadow: 0 0 10px rgba(77, 255, 157, 0.35);
+  /* V3.7 偽立體：輕微 perspective 傾斜＋右下偏移的「牆高」陰影，讓建築從平面浮起 */
+  transform: perspective(220px) rotateX(7deg);
+  box-shadow: 0 0 10px rgba(77, 255, 157, 0.35), 7px 7px 0 rgba(0, 0, 0, 0.45);
 }
+.mk-job-wrap, .mk-poi-wrap, .mk-hero-wrap { will-change: transform; }
 .mk-build span { font-size: 11px; color: var(--green); font-weight: 700; }
 .mk-build.site { border-color: var(--dim); box-shadow: none; opacity: 0.75; }
 .mk-build.site span { color: var(--dim); }
@@ -206,6 +217,12 @@ body {
   pointer-events: none;
 }
 #roster > * { pointer-events: auto; }
+/* V3.7 貼近模式：進入互動半徑時收起 HUD 與名冊（淡出），只留主角與目標——離開半徑還原 */
+body.immersed #hud { opacity: 0.08; pointer-events: none; transition: opacity 0.7s; }
+body.immersed #roster { opacity: 0; pointer-events: none; transition: opacity 0.7s; }
+body.immersed #hud > * { pointer-events: none; }
+body.immersed #roster > * { pointer-events: none; }
+#hud, #roster { transition: opacity 0.7s; }
 .roster-title {
   font-size: 13px; font-weight: 700; color: var(--pink);
   background: rgba(18, 23, 34, 0.9); border: 1px solid var(--line);
