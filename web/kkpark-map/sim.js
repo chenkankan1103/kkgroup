@@ -46,7 +46,11 @@ const Sim = (() => {
       jobs: {}, nextGen: 0, ended: null,
       buried: 0, buriedRefund: 0, raidCount: 0, bribeCount: 0,  // V2.5
       act2: false, evidence: 0, hqRaidFail: 0, cells: null,     // V3.0 第二幕
-      hero: { pos: { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 } },  // V3.5 主角（出生偏移到總部西南側，避開門口巡查熱點）
+      hero: (() => {   // V3.7：出生點直接吸附到總部西南側最近街道（newGame 時 roadGrid 尚未建，nearestRoad 會自建）
+        const p0 = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
+        const snap = nearestRoad(p0.lat, p0.lng);
+        return { pos: snap ? { lat: snap.lat, lng: snap.lng } : p0 };
+      })(),  // V3.5 主角（偏移避開門口巡查熱點＋吸附街上，離路減速不會一開局就觸發）
       poiCd: {}, poiUnlock: false,   // V3.6-A 互動地標：各地標冷卻時間、新任務來源解鎖旗標
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
@@ -504,7 +508,7 @@ const Sim = (() => {
   const keys = {};  // 按住的鍵：{ up, down, left, right }
   function setKey(dir, on) { keys[dir] = !!on; }
   let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
-  const OFFROAD_DIST = 0.0004;   // 離最近街道超過此距離（~45m）＝離路狀態
+  const OFFROAD_DIST = 0.0012;   // 離最近街道點超過此距離（~130m）＝離路（路網點間距大，走在兩點間的路段上不可誤判）
   const OFFROAD_SLOW = 0.5;      // 離路減速係數（速度打 5 折，QA 實玩後再調）
   function armHeroGrace() { heroCheckCd = gameMin() + 12; }  // 進場 12 遊戲分鐘免疫（主角出生在總部，總部周邊必有巡查車）
 
@@ -565,7 +569,9 @@ const Sim = (() => {
       let nlng = p.lng + (dx / d) * base;
       const snap = nearestRoad(nlat, nlng);
       if (snap) {
-        const k = snap.dist < 0.0004 ? 0.55 : snap.dist < 0.0012 ? 0.3 : 0.12;  // 路上→小巷→建築區的貼路力
+        // 貼路力三檔：路上強吸附→小巷中→建築深處幾乎不拉（V3.7：離路減速主導速度感，
+        // 深處若還強拉會把「減速」抵消成「傳送」，對比感消失）
+        const k = snap.dist < 0.0004 ? 0.55 : snap.dist < 0.0012 ? 0.3 : 0.05;
         nlat += (snap.lat - nlat) * k;
         nlng += (snap.lng - nlng) * k;
       }
@@ -1043,10 +1049,16 @@ const Sim = (() => {
     if (!S.evidence) S.evidence = 0;
     if (!S.hqRaidFail) S.hqRaidFail = 0;
     if (S.cells === undefined) S.cells = null;
-    if (S.hero === undefined || !S.hero) S.hero = { pos: { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 } };  // V3.5 主角欄位（出生偏移避開門口巡查熱點）
+    if (S.hero === undefined || !S.hero) {
+      const p0 = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
+      const snap = nearestRoad(p0.lat, p0.lng);
+      S.hero = { pos: snap ? { lat: snap.lat, lng: snap.lng } : p0 };  // V3.7 主角欄位（吸附街上）
+    }
     if (S.hero && Math.abs(S.hero.pos.lat - HQ.lat) < 1e-9 && Math.abs(S.hero.pos.lng - HQ.lng) < 1e-9) {
-      // 舊存檔主角正好在總部原點：一併偏移，避免進場即被盤查
-      S.hero.pos = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
+      // 舊存檔主角正好在總部原點：一併吸附到西南側街道
+      const p0 = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
+      const snap = nearestRoad(p0.lat, p0.lng);
+      S.hero.pos = snap ? { lat: snap.lat, lng: snap.lng } : p0;
     }
     // V3.6-A 舊存檔補 POI 欄位
     if (!S.poiCd) S.poiCd = {};
