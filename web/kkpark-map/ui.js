@@ -148,6 +148,7 @@ const UI = (() => {
     GameMap.renderHero();  // V3.5：主角 marker（走動＋動畫切換）
     GameMap.renderPois();  // V3.6-A：互動地標 marker
     GameMap.updatePoiButtons();  // V3.6-A：主角走近才浮出「進去看看？」
+    GameMap.immersionTick();  // V3.7：貼近模式（到點 zoom in＋收 UI）
     GameMap.tickCops();  // V2.6：警車巡邏滑行（內部自己節流到每 5 遊戲分鐘）
     GameMap.renderTurf();  // V2.7：勢力圈半徑跟著信任／進度走（變動才重繪）
     // V2：風聲預警 chip（發動後由攻堅卡接手）

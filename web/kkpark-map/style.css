@@ -213,6 +213,12 @@ body {
   pointer-events: none;
 }
 #roster > * { pointer-events: auto; }
+/* V3.7 貼近模式：進入互動半徑時收起 HUD 與名冊（淡出），只留主角與目標——離開半徑還原 */
+body.immersed #hud { opacity: 0.08; pointer-events: none; transition: opacity 0.7s; }
+body.immersed #roster { opacity: 0; pointer-events: none; transition: opacity 0.7s; }
+body.immersed #hud > * { pointer-events: none; }
+body.immersed #roster > * { pointer-events: none; }
+#hud, #roster { transition: opacity 0.7s; }
 .roster-title {
   font-size: 13px; font-weight: 700; color: var(--pink);
   background: rgba(18, 23, 34, 0.9); border: 1px solid var(--line);
