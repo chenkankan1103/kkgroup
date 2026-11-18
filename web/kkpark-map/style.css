@@ -158,7 +158,11 @@ body {
   background: rgba(18, 23, 34, 0.95); border: 1px solid var(--green);
   border-radius: 8px; padding: 2px 8px; white-space: nowrap;
   box-shadow: 0 0 10px rgba(77, 255, 157, 0.35);
+  /* V3.7 偽立體：輕微 perspective 傾斜＋右下偏移的「牆高」陰影，讓建築從平面浮起 */
+  transform: perspective(220px) rotateX(7deg);
+  box-shadow: 0 0 10px rgba(77, 255, 157, 0.35), 7px 7px 0 rgba(0, 0, 0, 0.45);
 }
+.mk-job-wrap, .mk-poi-wrap, .mk-hero-wrap { will-change: transform; }
 .mk-build span { font-size: 11px; color: var(--green); font-weight: 700; }
 .mk-build.site { border-color: var(--dim); box-shadow: none; opacity: 0.75; }
 .mk-build.site span { color: var(--dim); }
