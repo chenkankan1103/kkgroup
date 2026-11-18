@@ -282,7 +282,8 @@ def run(args):
                     ' width:r.width+p*2,height:r.height+p*2});})()'
                 )
                 if rect:
-                    shot_args['clip'] = dict(json.loads(rect), scale=args.scale)
+                    clip = json.loads(rect) if isinstance(rect, str) else rect
+                    shot_args['clip'] = dict(clip, scale=args.scale)
             res = probe.cmd('Page.captureScreenshot', shot_args)
             with open(args.shot, 'wb') as fh:
                 fh.write(base64.b64decode(res['result']['data']))
