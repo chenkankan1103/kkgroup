@@ -456,7 +456,7 @@ const GameMap = (() => {
 
   // ===== V3.7 貼近模式（immersion）：主角進入任務點/POI 互動半徑 → zoom 17＋收 UI；
   // 離開半徑 → 回 zoom 14、UI 回來。純 zoom/UI 切換，不是第二場景 =====
-  let immersive = false;
+  let immersive = false, immersiveOrigin = null;
   const IMMERSE_ZOOM = 17, WANDER_ZOOM = 14;
   function immersionTick() {
     if (!map) return;
@@ -474,13 +474,15 @@ const GameMap = (() => {
     }
     if (near && !immersive) {
       immersive = true;
+      immersiveOrigin = { lat: pos.lat, lng: pos.lng };   // v0.3.1 逃生閥：記錄進入點
       document.body.classList.add('immersed');
       // V3.7.1：UI 收合改 inline style 直接寫——CSS class 組 transition 在某些環境下
       // 過渡凍結（computed 恆 1），inline 是任何環境都生效的路；視覺靠 CSS transition 平滑
       setUiDim(true);
       // 跟隨權：只在「玩家沒有主動拖開鏡頭」時跟回主角（尊重拖曳暫停跟隨）
       if (followHero) map.flyTo([pos.lat, pos.lng], IMMERSE_ZOOM, { duration: 1.1 });
-    } else if (!near && immersive) {
+    } else if (immersive && (!near || Math.hypot(pos.lat - immersiveOrigin.lat, pos.lng - immersiveOrigin.lng) > 0.02)) {
+      // 逃生閥：離所有目標半徑之外，或離「進入點」超過 2.2km（near 判定異常撐住時強制解除）
       immersive = false;
       document.body.classList.remove('immersed');
       setUiDim(false);
@@ -564,6 +566,17 @@ const GameMap = (() => {
     document.addEventListener('keyup', (e) => {
       const dir = KEYMAP[e.code];
       if (dir) Sim.setKey(dir, false);
+      // v0.3.1 急停：鬆鍵瞬間掐斷進行中的 1s 補間——先把 transition 關掉、跳到 sim 當前落點、
+      // 再換 0.4s class 補完殘餘距離（否則最後一個 tick 的 1s 滑行會拖出 1.4 秒的冰面感）
+      const S = Sim.state();
+      const stillMoving = S && S.hero && S.hero.moving;
+      if (heroMarker && !stillMoving) {
+        const el = heroMarker.getElement();
+        if (el) el.style.transition = 'none';
+        if (S && S.hero) heroMarker.setLatLng([S.hero.pos.lat, S.hero.pos.lng]);
+        el.style.transition = '';
+        el.classList.add('hero-stopping');
+      }
     });
     // 拖動地圖＝暫停跟隨（點主角鍵會再啟動）
     map.on('dragstart', () => { followHero = false; });
