@@ -3,7 +3,7 @@
 
 // 遊戲內時鐘：1 真實秒 = 1 遊戲分鐘（1 真實分鐘 ≈ 1 遊戲小時）
 const TICK_MS = 1000;
-const GAME_VERSION = 'v0.3.1';   // 語義版本：0.3.0 核心迴圈＋移動手感；0.3.1 移動微調（頓挫/immersed/停步補間）
+const GAME_VERSION = 'v0.4.0';   // 語義版本：0.3.x 移動手感；0.4.0 緊張感系統（乙經濟耗材化＋甲曝光度 heat）
 
 // 各時段巡邏密度（0-23 時）——深夜安靜、白天最多
 const POLICE_DENSITY = [
@@ -134,6 +134,20 @@ const UPKEEP = {
 };
 const DURABLE_USES = 5;              // 耐久：贓車牌/VPN 各 5 次
 const LOW_MONEY_WARN = 20000;        // 錢低於此 → 任務面板接單發光
+// ===== v0.4.0 甲：曝光度（heat）——「被發現」的恐懼系統化 =====
+const HEAT = {
+  STREET: 0.3,          // 離開總部（綠圈外）每分鐘累積
+  COP_SIGHT: 1.0,       // 巡查車 120m 視線內每分鐘累積
+  POLICE_ZONE: 0.8,     // 紅圈（警方勢力瓣）內每分鐘累積
+  CHECKED: 15,          // 被查崗一次 +15
+  COOL_HOME: 0.5,       // 總部/綠圈內每分鐘降溫
+  MAX: 100,
+  SHIFT_MIN: 31,        // 31-60：巡查車巡邏落點往主角偏移
+  HUNT_MIN: 61,         // 61+：主動查崗（對方開過來）＋任務風險 +10%
+  SIGHT_R: 0.0011,      // 視線半徑（度）≈120m
+  RISK_ADD: 0.10,       // 61+ 時任務風險加成
+  DECOY_PRICE: 8000,    // 「壓熱」消耗品單價（贏一次壓熱 -30）
+};
 
 const PRICES = { bail: 20000, bailPerMin: 2000, hire: 25000, intel: 30000 };
 const INTEL_BUY_POLICE = 15; // 花錢買情報一次加的警方進度

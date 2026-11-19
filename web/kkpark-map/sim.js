@@ -52,6 +52,7 @@ const Sim = (() => {
         return { pos: snap ? { lat: snap.lat, lng: snap.lng } : p0 };
       })(),  // V3.5 主角（偏移避開門口巡查熱點＋吸附街上，離路減速不會一開局就觸發）
       poiCd: {}, poiUnlock: false,   // V3.6-A 互動地標：各地標冷卻時間、新任務來源解鎖旗標
+      heat: 0,                        // v0.4.0 甲：曝光度（重開局歸零；存檔保留才有連續感）
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
     for (let i = 0; i < START.missions; i++) genMission();
@@ -289,7 +290,7 @@ const Sim = (() => {
       lat, lng,
       pay: Math.round(rndInt(t.pay[0], t.pay[1]) * distMult * zm.pay),
       durMin: rndInt(t.dur[0], t.dur[1]),
-      risk: Math.min(0.9, (t.risk * (0.6 + heat * 0.8) + dist * 1.4) * zm.risk),
+      risk: Math.min(0.9, (t.risk * (0.6 + heat * 0.8) + dist * 1.4) * zm.risk) + ((S.heat || 0) >= HEAT.HUNT_MIN ? HEAT.RISK_ADD : 0),
       zone,
       heat,
       distTier: dist < 0.02 ? '近' : dist < 0.04 ? '中' : '遠',
@@ -512,6 +513,36 @@ const Sim = (() => {
   const OFFROAD_SLOW = 0.35;     // 離路減速係數（V3.7.1：0.5→0.35，QA 實玩對比仍不足）
   let heroStall = false;         // 移動中跨進離路的第一步頓挫旗標
   let heroWasOffRoad = false;    // 上一 tick 的離路狀態（頓挫邊緣判定用）
+
+  // ===== v0.4.0 甲：曝光度（heat）——看不見數值、看得見後果 =====
+  // 每遊戲分鐘結算：街上累積、巡查車視線內加速、紅圈內加速；總部/綠圈降溫。
+  // 31+ 巡查車落點偏移（map.js 讀 Sim.heatLevel()）、61+ 主動查崗＋任務風險 +10%。
+  function heatTick() {
+    if (!S || !S.hero) return;
+    const pos = S.hero.pos;
+    let d = 0;
+    const inPark = Sim.zoneOf(pos.lat, pos.lng) === 'park' || Math.hypot(pos.lat - HQ.lat, pos.lng - HQ.lng) < 0.0012;
+    if (inPark) {
+      d = -HEAT.COOL_HOME;                       // 總部/綠圈：降溫（放置安全圈）
+    } else {
+      d = HEAT.STREET;                           // 街上：慢慢發熱（掛機也逃不掉）
+      if (Sim.zoneOf(pos.lat, pos.lng) === 'police' || Sim.zoneOf(pos.lat, pos.lng) === 'contested') d += HEAT.POLICE_ZONE;
+      for (const c of GameMap.copPositions()) {  // 視線內（120m）加速
+        if (Math.hypot(c.lat - pos.lat, c.lng - pos.lng) < HEAT.SIGHT_R) { d += HEAT.COP_SIGHT; break; }
+      }
+    }
+    S.heat = clamp100((S.heat || 0) + d);
+    // 61+：主動查崗——巡查車「開過來」（不用貼上），機率隨 heat
+    if (!paused && !S.ended && S.heat >= HEAT.HUNT_MIN && gameMin() >= heroCheckCd) {
+      if (Math.random() < 0.04 + (S.heat - HEAT.HUNT_MIN) * 0.004) {
+        heroCheckCd = gameMin() + 30;
+        paused = true;
+        S.heat = clamp100(S.heat + HEAT.CHECKED);
+        emit('heroCheck', pos);
+        emit('toast', { icon: '🚨', text: '麻煩找上門了——對方盯上你一陣子了' });
+      }
+    }
+  }
   function armHeroGrace() { heroCheckCd = gameMin() + 12; }  // 進場 12 遊戲分鐘免疫（主角出生在總部，總部周邊必有巡查車）
 
   // ── V3.5.1 貼路行走：路網點格子索引（400m 格，跟 map.js 同款），最近點查詢 ──
@@ -600,6 +631,7 @@ const Sim = (() => {
       emit('heroMove', S.hero.pos);
     }
     heroWasOffRoad = !!offRoad;   // 記錄本 tick 狀態，下一 tick 的頓挫邊緣判定用
+    heatTick();   // v0.4.0 甲：曝光度結算（每遊戲分鐘）
     // 巡查車互動：靠近才「有機率」被攔下問話（冷卻 30 遊戲分鐘；不是每次靠近都攔）
     if (!paused && !S.ended && gameMin() >= heroCheckCd) {
       const pos = GameMap.copPositions();
@@ -608,6 +640,7 @@ const Sim = (() => {
           if (Math.random() < 0.35) {   // 撞上了，但七成機率對方沒注意你——放行
             heroCheckCd = gameMin() + 30;
             paused = true;
+            S.heat = clamp100((S.heat || 0) + HEAT.CHECKED);   // v0.4.0：被查崗 heat +15
             emit('heroCheck', S.hero.pos);
           } else {
             heroCheckCd = gameMin() + 6;  // 這次沒事，短冷卻後再算
@@ -1130,6 +1163,7 @@ const Sim = (() => {
     if (S.poiUnlock === undefined) S.poiUnlock = false;
     // v0.4.0 乙：裝備耐久欄位（舊檔補 0；首次消耗時會初始化為滿耐久）
     if (!S.gearUses) S.gearUses = {};
+    if (S.heat === undefined) S.heat = 0;   // v0.4.0 甲：舊存檔補 heat 0
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
@@ -1243,5 +1277,6 @@ const Sim = (() => {
     setKey, resolveHeroCheck,  // V3.5 主角操控與盤查
     poiList, poiNearHero, triggerPoi, chooseHeroEvent,  // V3.6-A 互動地標
     upkeepCost, useDurable,  // v0.4.0 乙：園區開銷與裝備耐久
+    heatLevel: () => (S ? S.heat || 0 : 0),  // v0.4.0 甲：heat 讀數（map.js 紅暈與巡查車偏移用）
   };
 })();
