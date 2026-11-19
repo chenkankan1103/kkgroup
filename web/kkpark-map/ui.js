@@ -151,6 +151,10 @@ const UI = (() => {
     GameMap.renderPois();  // V3.6-A：互動地標 marker
     GameMap.updatePoiButtons();  // V3.6-A：主角走近才浮出「進去看看？」
     GameMap.immersionTick();  // V3.7：貼近模式（到點 zoom in＋收 UI）
+    // v0.4.0 甲：heat 紅暈——屏幕邊緣一圈紅光隨曝光度變濃（顯示後果不顯數值）
+    const heat = Sim.heatLevel();
+    const glow = Math.max(0, (heat - 20) / 80);   // 20 以下不亮，100 全紅
+    document.documentElement.style.setProperty('--heat-glow', glow.toFixed(2));
     GameMap.tickCops();  // V2.6：警車巡邏滑行（內部自己節流到每 5 遊戲分鐘）
     GameMap.renderTurf();  // V2.7：勢力圈半徑跟著信任／進度走（變動才重繪）
     // V2：風聲預警 chip（發動後由攻堅卡接手）

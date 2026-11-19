@@ -125,8 +125,15 @@ const GameMap = (() => {
         let dens2 = dens;
         if (zone === 'police' || zone === 'contested') dens2 *= TURF.COP_BOOST_POLICE;
         else if (zone === 'park') dens2 *= TURF.COP_SUPPRESS_PARK;
+        // v0.4.0 甲：heat 31+ 主角周邊巡查密度上調——「對方盯上你了」，車真的變多；
+        // 門檻已飽和（dens2×0.9 命中率極高），乘倍率無效——改用「豁免格子」：heat 越高，
+        // 沒過 hash 門檻的格子也有機率強制放行（每 6-2 格一台，決定性、不破 copPos 路線）
+        const heat = typeof Sim.heatLevel === 'function' ? Sim.heatLevel() : 0;
+        const forceEvery = heat >= HEAT.HUNT_MIN ? 2 : heat >= HEAT.SHIFT_MIN ? 4 : 0;   // 61+ 每 2 格、31+ 每 4 格
         for (let k = 0; k < 2; k++) {
-          if (hash3(cx, cy, 7 + k) < dens2 * 0.9) {  // V3.5：0.45→0.9——主角走動視角下高倍率時視野格子太少，原門檻會開空窗（碰撞互動需要車常駐可見）
+          const roll = hash3(cx, cy, 7 + k);
+          const forced = forceEvery > 0 && ((cx * 3 + cy + k) % forceEvery === 0);
+          if (roll < dens2 * 0.9 || forced) {  // V3.5：0.45→0.9——主角走動視角下高倍率時視野格子太少，原門檻會開空窗（碰撞互動需要車常駐可見）
             const e = pts[(hash3(cx, cy * 3 + k, 11) * pts.length) | 0];
             const dir = hash3(cx * 3 + k, cy, 29) < 0.5 ? 1 : -1;
             const t = Sim.gameMin();
@@ -140,6 +147,7 @@ const GameMap = (() => {
   }
 
   // 每 5 遊戲分鐘（5 真實秒）把可視警車的目標推進到 5 分鐘後的位置，CSS 補間滑過去
+  // （v0.4.0：heat 追蹤感改由 refreshPolice 的密度上調承接，這裡維持決定性路線不動）
   function tickCops() {
     if (!copsLive.length) return;
     const t = Sim.gameMin();
