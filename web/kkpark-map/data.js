@@ -119,11 +119,21 @@ const EVENTS = [
 
 // ===== 裝備（買一次永久生效）=====
 const GEAR = [
-  { id: 'plate', name: '假車牌', icon: '🏷️', price: 12000, desc: '車手／運貨被逮風險降低' },
+  { id: 'plate', name: '假車牌', icon: '🏷️', price: 12000, desc: '車手／運貨被逮風險降低', durable: true },
   { id: 'voice', name: '變聲器', icon: '🎙️', price: 20000, desc: '詐騙班與話術安撫成功率 +10%' },
-  { id: 'vpn', name: '企業級 VPN', icon: '💻', price: 30000, desc: '所有懷疑度累積 -20%' },
+  { id: 'vpn', name: '企業級 VPN', icon: '💻', price: 30000, desc: '所有懷疑度累積 -20%', durable: true },
   { id: 'car', name: '贓車', icon: '🏎️', price: 45000, desc: '成員移動速度將近兩倍，省趕路時間' },
 ];
+// ===== v0.4.0 乙：經濟耗材化 =====
+const UPKEEP = {
+  PER_MEMBER: 800,    // 每人每天園區開銷
+  PER_BUILDING: 1500, // 每棟建築每天
+  AT_MIN: 21 * 60,    // 21:00 收（跟貢金同刻，一張帳單講清楚）
+  SHORT_TRUST: 8,     // 繳不出 trust -8/天
+  WARN_MIN: 20 * 60,  // 20:00 預告
+};
+const DURABLE_USES = 5;              // 耐久：贓車牌/VPN 各 5 次
+const LOW_MONEY_WARN = 20000;        // 錢低於此 → 任務面板接單發光
 
 const PRICES = { bail: 20000, bailPerMin: 2000, hire: 25000, intel: 30000 };
 const INTEL_BUY_POLICE = 15; // 花錢買情報一次加的警方進度

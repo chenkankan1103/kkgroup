@@ -257,6 +257,14 @@ button.mini {
 button.mini:hover { border-color: var(--cyan); }
 button.mini.bail { color: var(--gold); border-color: rgba(255, 225, 77, 0.4); }
 
+/* v0.4.0 乙：錢低於門檻 → 任務面板發光（該接單了） */
+.panel.low-money { border-color: var(--gold); animation: lowMoneyPulse 1.6s ease-in-out infinite; }
+@keyframes lowMoneyPulse {
+  0%, 100% { box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 6px rgba(255, 225, 77, 0.3); }
+  50% { box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 16px rgba(255, 225, 77, 0.65); }
+}
+.low-money-tip { font-size: 12px; color: var(--gold); margin-bottom: 8px; }
+
 /* ===== 右側面板（任務/商店）===== */
 .panel {
   position: fixed; right: 10px; top: 86px; bottom: 14px; width: 300px; z-index: 1000;

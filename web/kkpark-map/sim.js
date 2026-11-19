@@ -619,19 +619,43 @@ const Sim = (() => {
   }
 
   // 例行查崗抉擇（heroCheck 卡的三個選項）
+  // v0.4.0 乙：查崗後果的裝備抵用——假車牌/VPN 各有耐久 5 次，用一次少一次，歸零要重買
+  function useDurable(gearId, label) {
+    if (!S.gear[gearId]) return false;
+    S.gearUses = S.gearUses || {};
+    S.gearUses[gearId] = S.gearUses[gearId] === undefined ? DURABLE_USES - 1 : S.gearUses[gearId] - 1;
+    if (S.gearUses[gearId] <= 0) {
+      delete S.gear[gearId]; delete S.gearUses[gearId];
+      emit('toast', { icon: '🧰', text: `${label}用完了——壽終正寢，得再去買一組` });
+      emit('gear');
+    } else {
+      emit('toast', { icon: '🧰', text: `${label}耐久消耗一次（剩 ${S.gearUses[gearId]} 次）` });
+    }
+    return true;
+  }
+
   function resolveHeroCheck(idx) {
     paused = false;
-    if (idx === 0) {           // 低調路過：小機率被記一筆
-      if (Math.random() < 0.25) { addSus(5); emit('toast', { icon: '👁️', text: '對方多看了你兩眼，記了一筆（懷疑 +5）' }); }
+    if (idx === 0) {           // 低調路過：小機率被記一筆（有假車牌/VPN → 耗一次耐久抵掉）
+      if (Math.random() < 0.25) {
+        const shielded = (S.gear.plate && useDurable('plate', '假車牌')) || (S.gear.vpn && useDurable('vpn', '企業級 VPN'));
+        if (shielded) emit('toast', { icon: '🛡️', text: '靠裝備掩護，這筆沒被記上' });
+        else { addSus(5); emit('toast', { icon: '👁️', text: '對方多看了你兩眼，記了一筆（懷疑 +5）' }); }
+      }
       else emit('toast', { icon: '🚶', text: '你低頭滑手機走過去，對方沒理你' });
-    } else if (idx === 1) {    // 快步離開：速度判定（腿力），失敗被登記
+    } else if (idx === 1) {    // 快步離開：速度判定（腿力），失敗被登記（裝備可抵）
       const mem = S.members[0];
       const p = 0.45 + (mem ? mem.legs : 3) * 0.06 + (S.gear.car ? 0.15 : 0);
       if (Math.random() < Math.min(0.9, p)) emit('toast', { icon: '🏃', text: '你轉進巷子甩掉了這次查崗' });
       else {
-        S.police = clamp100(S.police + 4); addSus(10);
-        S.hero.pos = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
-        emit('toast', { icon: '🚨', text: '沒走成——被登記資料後放回（風聲 +4、懷疑 +10）' });
+        const shielded = (S.gear.vpn && useDurable('vpn', '企業級 VPN')) || (S.gear.plate && useDurable('plate', '假車牌'));
+        if (shielded) {
+          emit('toast', { icon: '🛡️', text: '資料對不上號——登記了個寂寞，放行' });
+        } else {
+          S.police = clamp100(S.police + 4); addSus(10);
+          S.hero.pos = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
+          emit('toast', { icon: '🚨', text: '沒走成——被登記資料後放回（風聲 +4、懷疑 +10）' });
+        }
       }
     } else {                   // 亮出線人身分：風聲微增、組織信任微降
       S.police = clamp100(S.police + 3);
@@ -857,6 +881,24 @@ const Sim = (() => {
       }
     }
 
+    // v0.4.0 乙：園區開銷——21:00 跟貢金一起收（收支明細一張卡講清楚）；20:00 預告
+    if (S.min === UPKEEP.WARN_MIN) {
+      const cost = upkeepCost();
+      emit('toast', { icon: '🧾', text: `月底快到了——今晚 21:00 園區開銷 $${cost.toLocaleString()}（${S.members.length} 人 × $800 ＋建築 × $1500）` });
+    } else if (S.min === UPKEEP.AT_MIN) {
+      const cost = upkeepCost();
+      const trib = (S.day >= TRIBUTE.FROM_DAY && !S.act2) ? tributeCost() : 0;
+      if (S.money >= cost) {
+        S.money -= cost;
+        const parts = [`成員 ${S.members.length} 人`, `建築 ${Object.keys(S.buildings).length} 棟`];
+        emit('toast', { icon: '🧾', text: `21:00 園區開銷 $${cost.toLocaleString()}（${parts.join('＋')}）——帳上剩 $${S.money.toLocaleString()}${trib ? `（另有貢金 $${trib.toLocaleString()}）` : ''}` });
+      } else {
+        S.trust = clamp100(S.trust - UPKEEP.SHORT_TRUST);
+        emit('toast', { icon: '💸', text: `園區開銷 $${cost.toLocaleString()} 繳不出來——水電被斷、成員在議論（信任 -${UPKEEP.SHORT_TRUST}）` });
+      }
+      after();
+    }
+
     for (const mem of S.members) {
       if (mem.state === 'jail' && Date.now() >= mem.jailUntil) {
         mem.state = 'idle'; mem.jailUntil = 0;
@@ -927,6 +969,11 @@ const Sim = (() => {
   // ===== V2.5：貢金額度（隨天數成長） =====
   function tributeCost() {
     return Math.min(TRIBUTE.CAP, TRIBUTE.BASE + Math.max(0, S.day - TRIBUTE.FROM_DAY) * TRIBUTE.PER_DAY);
+  }
+
+  // v0.4.0 乙：每天 21:00 的園區開銷——成員×800＋建築×1500（招募/蓋建築有長期成本，錢有去處）
+  function upkeepCost() {
+    return S.members.length * UPKEEP.PER_MEMBER + Object.keys(S.buildings).length * UPKEEP.PER_BUILDING;
   }
 
   function rollRaid() {
@@ -1081,6 +1128,8 @@ const Sim = (() => {
     // V3.6-A 舊存檔補 POI 欄位
     if (!S.poiCd) S.poiCd = {};
     if (S.poiUnlock === undefined) S.poiUnlock = false;
+    // v0.4.0 乙：裝備耐久欄位（舊檔補 0；首次消耗時會初始化為滿耐久）
+    if (!S.gearUses) S.gearUses = {};
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
@@ -1193,5 +1242,6 @@ const Sim = (() => {
     hour, policeDensity, clockStr, gameMin,
     setKey, resolveHeroCheck,  // V3.5 主角操控與盤查
     poiList, poiNearHero, triggerPoi, chooseHeroEvent,  // V3.6-A 互動地標
+    upkeepCost, useDurable,  // v0.4.0 乙：園區開銷與裝備耐久
   };
 })();
