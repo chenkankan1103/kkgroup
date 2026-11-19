@@ -580,9 +580,13 @@ const Sim = (() => {
       let nlng = p.lng + (dx / d) * base;
       const snap = nearestRoad(nlat, nlng);
       if (snap) {
-        // 貼路力三檔：路上強吸附→小巷中→建築深處幾乎不拉（V3.7：離路減速主導速度感，
-        // 深處若還強拉會把「減速」抵消成「傳送」，對比感消失）
-        const k = snap.dist < 0.0004 ? 0.55 : snap.dist < 0.0012 ? 0.3 : 0.05;
+        // 貼路力：隨距離連續衰減（v0.3.1：原本三檔階梯會在檔位切換處突變——QA 觀察的
+        // 「騎樓小頓挫」就是它）——0.0004 內 0.55 線性降到 0.0024 處 0.05，無階梯
+        let k = Math.max(0.05, 0.55 - (snap.dist / 0.0024) * 0.5);
+        // v0.3.1 脫困對稱性：移動方向朝著最近路網點（內積 < 0，往路上走）→ 吸附減半——
+        // 「進去難、出來相對容易」，誤入建築後回街不會像在糖漿裡游泳
+        const towardRoad = (snap.lat - p.lat) * (-dy / d) + (snap.lng - p.lng) * (dx / d);
+        if (towardRoad < 0) k *= 0.5;
         nlat += (snap.lat - nlat) * k;
         nlng += (snap.lng - nlng) * k;
       }
