@@ -255,7 +255,7 @@ const TW = {
 const TURF = {
   POLICE_CENTER: { lat: HQ.lat + 0.026, lng: HQ.lng + 0.024 },  // 分局核心（東北 ~3.5km）
   POLICE_SUBS: 4,          // 分局周邊路網上決定性挑幾個「派出所」瓣
-  PARK_BASE: 0.012, PARK_TRUST: 0.00022,     // 詐團瓣半徑 = 0.012 + 信任 × 0.00022（信任 60 → 2.5km）
+  PARK_BASE: 0.005, PARK_TRUST: 0.00012,     // v0.4.1：綠圈砍 1/4（信任 60 → ~0.0122° ≈1.4km）——地盤視覺跟「家的安全感」對齊，常活動區會累積 heat
   POLICE_BASE: 0.011, POLICE_PROG: 0.0002, POLICE_SUS: 0.0001, // 警方瓣半徑（滿進度時紅瓣壓到園區門口）
   COP_BOOST_POLICE: 1.4, COP_SUPPRESS_PARK: 0.65,  // 圈內巡邏車密度修正
   ZONES: {

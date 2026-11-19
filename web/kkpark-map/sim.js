@@ -280,7 +280,26 @@ const Sim = (() => {
     }
     // V2.5：距離參與決策——遠的錢多、風險也高，近的快但薄
     // 生成範圍 lat ±0.035 / lng ±0.045（最大 dist ≈ 0.057），門檻與倍率對齊這個範圍
-    const dist = Math.hypot(lng - HQ.lng, lat - HQ.lat);
+    let dist = Math.hypot(lng - HQ.lng, lat - HQ.lat);
+    // v0.4.1：任務標記撒出綠圈——過半強制落在綠圈外（出門接單＝進 heat 區，張力成立）；
+    // 落在綠圈內且隨機數 < 0.6 → 沿同方位重丟到綠圈外（最多重試 3 次，仍失敗就保留）
+    const parkR = parkRadius();
+    if (dist < parkR && Math.random() < 0.6) {
+      for (let tries = 0; tries < 3 && dist < parkR; tries++) {
+        lat = Math.min(TW.latR[1], Math.max(TW.latR[0], c2.lat + (Math.random() - 0.5) * 0.09));
+        lng = Math.min(TW.lngR[1], Math.max(TW.lngR[0], c2.lng + (Math.random() - 0.5) * 0.11));
+        if (typeof ROAD_NET !== 'undefined' && ROAD_NET.length) {
+          const cand = [];
+          for (const ch of ROAD_NET) {
+            for (const p of ch) {
+              if (Math.abs(p[0] - c2.lat) <= 0.035 && Math.abs(p[1] - c2.lng) <= 0.045 && Math.hypot(p[1] - HQ.lng, p[0] - HQ.lat) >= parkR) cand.push(p);
+            }
+          }
+          if (cand.length) { const p = cand[(Math.random() * cand.length) | 0]; lat = p[0]; lng = p[1]; }
+        }
+        dist = Math.hypot(lng - HQ.lng, lat - HQ.lat);
+      }
+    }
     const distMult = 0.85 + Math.min(1, dist / 0.055) * 0.55;
     // V2.7：落在誰的圈內，風險與報酬就不同（地盤安穩、警方圈高危高報酬）
     const zone = zoneOf(lat, lng);
@@ -517,11 +536,25 @@ const Sim = (() => {
   // ===== v0.4.0 甲：曝光度（heat）——看不見數值、看得見後果 =====
   // 每遊戲分鐘結算：街上累積、巡查車視線內加速、紅圈內加速；總部/綠圈降溫。
   // 31+ 巡查車落點偏移（map.js 讀 Sim.heatLevel()）、61+ 主動查崗＋任務風險 +10%。
+  let heatRefreshLvl = -1;       // v0.4.1 項5：heat 檔位快取（跨檔才 refresh）
+  // v0.4.1：壓熱消耗品——花錢疏通，heat -30（逃生口；商店品項接在 ui.js）
+  function useDecoy() {
+    if (!S) return false;
+    if (S.money < HEAT.DECOY_PRICE) { emit('toast', { icon: '💸', text: `錢不夠——疏通要 $${HEAT.DECOY_PRICE.toLocaleString()}` }); return false; }
+    if ((S.heat || 0) < 10) { emit('toast', { icon: '🙂', text: '現在沒什麼風聲，不用白花這錢' }); return false; }
+    S.money -= HEAT.DECOY_PRICE;
+    S.heat = clamp100(Math.max(0, S.heat - 30));
+    emit('toast', { icon: '🧯', text: `疏通打點完成——耳目清靜多了（曝光 -30，現值${S.heat >= 70 ? '仍偏高' : S.heat >= 31 ? '尚可' : '安全'}）` });
+    after();
+    return true;
+  }
+
   function heatTick() {
     if (!S || !S.hero) return;
     const pos = S.hero.pos;
     let d = 0;
-    const inPark = Sim.zoneOf(pos.lat, pos.lng) === 'park' || Math.hypot(pos.lat - HQ.lat, pos.lng - HQ.lng) < 0.0012;
+    // v0.4.1：降溫判定改嚴——只有 HQ 150m 內算「家」（原本整個綠圈都降溫，玩家常活動區永遠安全）
+    const inPark = Math.hypot(pos.lat - HQ.lat, pos.lng - HQ.lng) < 0.0014;
     if (inPark) {
       d = -HEAT.COOL_HOME;                       // 總部/綠圈：降溫（放置安全圈）
     } else {
@@ -532,9 +565,17 @@ const Sim = (() => {
       }
     }
     S.heat = clamp100((S.heat || 0) + d);
+    // v0.4.1 項5：heat 跨檔時主動 refresh 巡查車（豁免格子重算）——不只靠 moveend/min%60
+    const lvl = S.heat >= HEAT.HUNT_MIN ? 2 : S.heat >= HEAT.SHIFT_MIN ? 1 : 0;
+    if (lvl !== heatRefreshLvl) {
+      heatRefreshLvl = lvl;
+      GameMap.refreshPolice();
+    }
     // 61+：主動查崗——巡查車「開過來」（不用貼上），機率隨 heat
     if (!paused && !S.ended && S.heat >= HEAT.HUNT_MIN && gameMin() >= heroCheckCd) {
-      if (Math.random() < 0.04 + (S.heat - HEAT.HUNT_MIN) * 0.004) {
+      // v0.4.1 曲線前移：61-70 區間前段拉陡（剛過 61 就有 12-17%/tick——1-2 分鐘內必有一次威脅感），
+      // 70+ 線性續升
+      if (Math.random() < (S.heat < 70 ? 0.12 + (S.heat - HEAT.HUNT_MIN) * 0.005 : 0.04 + (S.heat - HEAT.HUNT_MIN) * 0.004)) {
         heroCheckCd = gameMin() + 30;
         paused = true;
         S.heat = clamp100(S.heat + HEAT.CHECKED);
@@ -1276,7 +1317,7 @@ const Sim = (() => {
     hour, policeDensity, clockStr, gameMin,
     setKey, resolveHeroCheck,  // V3.5 主角操控與盤查
     poiList, poiNearHero, triggerPoi, chooseHeroEvent,  // V3.6-A 互動地標
-    upkeepCost, useDurable,  // v0.4.0 乙：園區開銷與裝備耐久
+    upkeepCost, useDurable, useDecoy,  // v0.4.0 乙＋v0.4.1：園區開銷、裝備耐久、壓熱消耗品
     heatLevel: () => (S ? S.heat || 0 : 0),  // v0.4.0 甲：heat 讀數（map.js 紅暈與巡查車偏移用）
   };
 })();
