@@ -277,7 +277,11 @@ const UI = (() => {
     const m = S.missions.find((x) => x.id === curMissionId);
     if (!m) { $('misPanel').classList.add('hidden'); return; }
     const t = MISSION_TYPES[m.type] || ACT2_MISSION_TYPES[m.type];
+    // v0.4.0 乙：錢低於門檻 → 任務面板發光提示「該接單了」（21:00 開銷壓力對應的可視訊號）
+    $('misPanel').classList.toggle('low-money', S.money < LOW_MONEY_WARN);
+    const lowTip = S.money < LOW_MONEY_WARN ? `<div class="low-money-tip">💰 帳上只剩 $${S.money.toLocaleString()}——21:00 的園區開銷快繳不出來了，接單要緊</div>` : '';
     $('misBody').innerHTML = `
+      ${lowTip}
       <div class="mis-head">${t.icon} <b>${t.name}</b><span class="mis-code">${m.code}</span></div>
       <p class="mis-desc">${t.desc}</p>
       <div class="mis-rows">
