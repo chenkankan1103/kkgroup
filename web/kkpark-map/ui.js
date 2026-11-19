@@ -363,6 +363,10 @@ const UI = (() => {
         <div class="gi-body"><b>${g.name}</b><small>${g.desc}</small></div>
         ${S.gear[g.id] ? '<span class="owned-tag">✅</span>' : `<button class="mini" data-gear="${g.id}">$${g.price.toLocaleString()}</button>`}
       </div>`).join('')}
+      <div class="shop-sec">🧯 壓熱</div>
+      <div class="shop-item"><span class="gi">🧯</span>
+        <div class="gi-body"><b>疏通關係（壓熱）</b><small>曝光度 -30，走路都被盯上時的唯一解（現有曝光：${S.heat >= 70 ? '極高' : S.heat >= 31 ? '偏高' : '安全'}）</small></div>
+        ${S.heat < 15 ? '<span class="owned-tag">用不上</span>' : `<button class="mini" data-decoy="1">$${HEAT.DECOY_PRICE.toLocaleString()}</button>`}</div>
       <div class="shop-sec">🤝 招募</div>
       <div class="shop-item"><span class="gi">🧍</span>
         <div class="gi-body"><b>找個新人入夥</b><small>口才/腿力/運氣 三維隨機（3-8）· 人數 ${S.members.length}/${cap}</small></div>
@@ -375,6 +379,7 @@ const UI = (() => {
     $('shopBody').querySelectorAll('[data-build]').forEach((b) => { b.onclick = () => { Sim.build(b.dataset.build); renderShop(); tickBuildProgress(); }; });
     $('shopBody').querySelectorAll('[data-food]').forEach((b) => { b.onclick = () => { Sim.buyFood(); renderShop(); }; });
     $('shopBody').querySelectorAll('[data-gear]').forEach((b) => { b.onclick = () => { Sim.buyGear(b.dataset.gear); renderShop(); }; });
+    $('shopBody').querySelectorAll('[data-decoy]').forEach((b) => { b.onclick = () => { Sim.useDecoy(); renderShop(); }; });
     $('shopBody').querySelectorAll('[data-hire]').forEach((b) => { b.onclick = () => { Sim.hire(); renderShop(); }; });
     $('shopBody').querySelectorAll('[data-intel]').forEach((b) => { b.onclick = () => { Sim.buyIntel(); renderShop(); }; });
   }
