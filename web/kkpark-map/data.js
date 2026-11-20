@@ -151,7 +151,7 @@ const UPGRADE_TREE = {
     { id: 'foodsave', tab: 'upgrade', icon: '🍚', name: '大鍋炒', desc: '伙食消耗 -1/人（最低 0.5）',
       base: 9000, mult: 1.3, max: 3,
       eff: (lv) => Math.max(0.5, 2 - lv), effName: '每人伙食', fmt: (v) => v + ' 份' },
-    { id: 'durablesave', tab: 'upgrade', icon: '🧰', name: '自製工具', desc: '裝備耐久 +2 次/級（假車牌/VPN）',
+    { id: 'durablesave', tab: 'gear', icon: '🧰', name: '自製工具', desc: '裝備耐久 +2 次/級（假車牌/VPN）',
       base: 15000, mult: 1.28, max: 5,
       eff: (lv) => DURABLE_USES + lv * 2, effName: '裝備耐久', fmt: (v) => v + ' 次' },
   ],
