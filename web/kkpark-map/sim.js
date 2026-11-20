@@ -53,7 +53,7 @@ const Sim = (() => {
       })(),  // V3.5 主角（偏移避開門口巡查熱點＋吸附街上，離路減速不會一開局就觸發）
       poiCd: {}, poiUnlock: false,   // V3.6-A 互動地標：各地標冷卻時間、新任務來源解鎖旗標
       upgrades: {},                   // v0.5.0 升級樹：{ nodeId: level }
-      gearUses: {},                   // v0.5.1：裝備耐久（買入時依 durablesave 等級寫入終身 max）
+      gearUses: {}, gearMax: {},      // v0.5.1：裝備耐久與買入時的 max（UI 顯示「9 次中已用 X」用）
       heat: 0,                        // v0.4.0 甲：曝光度（重開局歸零；存檔保留才有連續感）
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
@@ -391,12 +391,13 @@ const Sim = (() => {
 
   function successPay(m, t, job) {
     const payMult = upEff('paymult');   // v0.5.0：話術手冊——任務報酬 +8%/級
+    const bonusFromUpgrade = payMult > 1 ? Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1) * (payMult - 1)) : 0;
     if (m.type === 'evidence') { onEvidenceSuccess(); }
     else if (m.type === 'sweep') {
       const pay = Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1) * payMult);
       S.money += pay;
       sweepSettle(job, true);
-      emit('toast', { icon: '💵', text: `${m.code} 掃蕩完成，進帳 $${pay.toLocaleString()}` });
+      emit('toast', { icon: '💵', text: `${m.code} 掃蕩完成，進帳 $${pay.toLocaleString()}${bonusFromUpgrade ? `（話術加成 +$${bonusFromUpgrade.toLocaleString()}）` : ''}` });
     }
     else if (m.type === 'intel') {
       S.police = clamp100(S.police + 12 + rndInt(0, 8));
@@ -404,7 +405,7 @@ const Sim = (() => {
     } else {
       const pay = Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1) * payMult);
       S.money += pay;
-      emit('toast', { icon: '💵', text: `${m.code} 任務完成，進帳 $${pay.toLocaleString()}` });
+      emit('toast', { icon: '💵', text: `${m.code} 任務完成，進帳 $${pay.toLocaleString()}${bonusFromUpgrade ? `（話術加成 +$${bonusFromUpgrade.toLocaleString()}）` : ''}` });
     }
     S.trust = clamp100(S.trust + t.trust);
     addSus(m.risk * 8);
@@ -1263,6 +1264,7 @@ const Sim = (() => {
     if (S.poiUnlock === undefined) S.poiUnlock = false;
     // v0.4.0 乙：裝備耐久欄位（舊檔補 0；首次消耗時會初始化為滿耐久）
     if (!S.gearUses) S.gearUses = {};
+    if (!S.gearMax) S.gearMax = {};   // v0.5.1：買入時的 max（舊檔補空表——沒記錄的裝備 UI 退回顯示剩餘次數）
     if (S.heat === undefined) S.heat = 0;   // v0.4.0 甲：舊存檔補 heat 0
     if (!S.upgrades) S.upgrades = {};        // v0.5.0 升級樹：舊檔補空表
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
@@ -1333,6 +1335,7 @@ const Sim = (() => {
     // 之後升級只影響之後買的（UI 分母讀 gearUses 初始值，語意直覺）
     if (id === 'plate' || id === 'vpn') {
       S.gearUses[id] = upEff('durablesave');
+      S.gearMax = S.gearMax || {}; S.gearMax[id] = S.gearUses[id];   // v0.5.1：買入時的 max 進存檔——UI 顯示「9 次中已用 5」用
     }
     after();
     emit('toast', { icon: g.icon, text: `入手 ${g.name}：${g.desc}` });

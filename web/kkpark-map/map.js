@@ -600,8 +600,10 @@ const GameMap = (() => {
         const el = heroMarker.getElement();
         if (el) el.style.transition = 'none';
         heroMarker.setLatLng([S.hero.pos.lat, S.hero.pos.lng]);
-        el.style.transition = '';
+        // v0.5.1 順序修正：hero-stopping class 必須在 transition='' 還原「之前」加——
+        // 原順序先還原（此時 stylesheet 還是 1s linear）再加 class，A→B 跳轉被 1s 補間＝急停失效
         el.classList.add('hero-stopping');
+        el.style.transition = '';
       }
     });
     // 拖動地圖＝暫停跟隨（點主角鍵會再啟動）
