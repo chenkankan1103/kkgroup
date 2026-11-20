@@ -151,11 +151,11 @@ const UPGRADE_TREE = {
     { id: 'foodsave', tab: 'upgrade', icon: '🍚', name: '大鍋炒', desc: '伙食消耗 -1/人（最低 0.5）',
       base: 9000, mult: 1.3, max: 3,
       eff: (lv) => Math.max(0.5, 2 - lv), effName: '每人伙食', fmt: (v) => v + ' 份' },
+  ],
+  gear: [
     { id: 'durablesave', tab: 'gear', icon: '🧰', name: '自製工具', desc: '裝備耐久 +2 次/級（假車牌/VPN）',
       base: 15000, mult: 1.28, max: 5,
       eff: (lv) => DURABLE_USES + lv * 2, effName: '裝備耐久', fmt: (v) => v + ' 次' },
-  ],
-  gear: [
     { id: 'heatshield', tab: 'gear', icon: '🛡️', name: '反追蹤訓練', desc: 'heat 累積 -8%/級',
       base: 14000, mult: 1.24, max: 6,
       eff: (lv) => Math.max(0.3, 1 - lv * 0.08), effName: 'heat 累積', fmt: (v) => '-' + Math.round((1 - v) * 100) + '%' },
