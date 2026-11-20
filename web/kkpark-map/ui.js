@@ -32,6 +32,7 @@ const UI = (() => {
     const gv = document.getElementById('gameVersion');
     if (gv && typeof GAME_VERSION !== 'undefined') gv.textContent = GAME_VERSION;
     GameMap.init();
+    Dock.init();  // v0.5.0 前哨：下方固定升級面板
     // V3.4：OAuth 回跳（?auth_token=…）→ 驗 token 存 my → 直接進遊戲（有存檔續玩、沒有開新局）
     Avatar.handleOAuthReturn().then((uid) => {
       if (!uid) return;
@@ -52,6 +53,7 @@ const UI = (() => {
     Sim.on('hqRaidResult', showHqRaidResult);
     Sim.on('ending', showEnding);
     Sim.on('buildings', onBuildings);
+    Sim.on('gear', () => Dock.refresh());  // v0.4.0 乙：耐久耗盡事件 → 裝備分頁重畫
     GameMap.cb.missionClick = openMission;
     GameMap.cb.hqClick = openHqRaid;
     GameMap.cb.cellClick = openCellPanel;
@@ -99,6 +101,7 @@ const UI = (() => {
     $('intro').classList.add('hidden');
     $('hud').classList.remove('hidden');
     $('roster').classList.remove('hidden');
+    $('dock').classList.remove('hidden');  // v0.5.0 前哨：進場就亮出下方升級欄
     renderAll();
     // 關頁時正好在攻堅決策 → 進場重彈策略卡（sim.load 已恢復暫停）
     const S0 = Sim.state();
@@ -179,6 +182,7 @@ const UI = (() => {
     }
     tickBuildProgress();
     tickRoster();
+    Dock.tick();  // v0.5.0 前哨：摘要條更新＋錢變動跳動
   }
 
   // 工地進度：只改百分比文字，不重建商店按鈕（避免點擊被吃掉）
@@ -588,7 +592,7 @@ const UI = (() => {
     setTimeout(() => el.remove(), 4200);
   }
 
-  return { boot };
+  return { boot, toast: showToast };  // toast 給 Dock 用（同款樣式，不另造輪子）
 })();
 
 window.addEventListener('DOMContentLoaded', UI.boot);
