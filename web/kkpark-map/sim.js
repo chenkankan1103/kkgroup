@@ -52,6 +52,7 @@ const Sim = (() => {
         return { pos: snap ? { lat: snap.lat, lng: snap.lng } : p0 };
       })(),  // V3.5 主角（偏移避開門口巡查熱點＋吸附街上，離路減速不會一開局就觸發）
       poiCd: {}, poiUnlock: false,   // V3.6-A 互動地標：各地標冷卻時間、新任務來源解鎖旗標
+      upgrades: {},                   // v0.5.0 升級樹：{ nodeId: level }
       heat: 0,                        // v0.4.0 甲：曝光度（重開局歸零；存檔保留才有連續感）
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
@@ -309,7 +310,7 @@ const Sim = (() => {
       lat, lng,
       pay: Math.round(rndInt(t.pay[0], t.pay[1]) * distMult * zm.pay),
       durMin: rndInt(t.dur[0], t.dur[1]),
-      risk: Math.min(0.9, (t.risk * (0.6 + heat * 0.8) + dist * 1.4) * zm.risk) + ((S.heat || 0) >= HEAT.HUNT_MIN ? HEAT.RISK_ADD : 0),
+      risk: Math.max(0.05, Math.min(0.9, (t.risk * (0.6 + heat * 0.8) + dist * 1.4) * zm.risk * upEff('riskcut')) + ((S.heat || 0) >= HEAT.HUNT_MIN ? HEAT.RISK_ADD : 0)),
       zone,
       heat,
       distTier: dist < 0.02 ? '近' : dist < 0.04 ? '中' : '遠',
@@ -337,7 +338,7 @@ const Sim = (() => {
     }
     // 趕路：從園區總部走到任務點（贓車將近兩倍速），去＋工作＋回都算進時程
     const dist = Math.hypot(m.lng - HQ.lng, m.lat - HQ.lat);
-    const speed = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
+    const speed = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1) * upEff('speedboot');   // v0.5.0：機動調度
     const travelMin = Math.max(1, Math.round(dist / speed));
     const job = {
       m, memId: memberId, mode,
@@ -388,9 +389,10 @@ const Sim = (() => {
   }
 
   function successPay(m, t, job) {
+    const payMult = upEff('paymult');   // v0.5.0：話術手冊——任務報酬 +8%/級
     if (m.type === 'evidence') { onEvidenceSuccess(); }
     else if (m.type === 'sweep') {
-      const pay = Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1));
+      const pay = Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1) * payMult);
       S.money += pay;
       sweepSettle(job, true);
       emit('toast', { icon: '💵', text: `${m.code} 掃蕩完成，進帳 $${pay.toLocaleString()}` });
@@ -399,7 +401,7 @@ const Sim = (() => {
       S.police = clamp100(S.police + 12 + rndInt(0, 8));
       emit('toast', { icon: '🕵️', text: `${m.code} 情報交付成功！警方進度大幅推進` });
     } else {
-      const pay = Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1));
+      const pay = Math.round(m.pay * (1 + (job.bonus || 0)) * (S.buildings.generator ? 1.15 : 1) * payMult);
       S.money += pay;
       emit('toast', { icon: '💵', text: `${m.code} 任務完成，進帳 $${pay.toLocaleString()}` });
     }
@@ -422,7 +424,7 @@ const Sim = (() => {
 
   // ===== V1.5：移動與結算（趕路 → 工作 → 溜回園區）=====
   function moveToward(j, tLat, tLng) {
-    const speed = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1);
+    const speed = MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1) * upEff('speedboot');   // v0.5.0：機動調度
     const dx = tLng - j.pos.lng, dy = tLat - j.pos.lat;
     const d = Math.hypot(dx, dy);
     if (d <= speed) { j.pos = { lat: tLat, lng: tLng }; return true; }
@@ -527,9 +529,10 @@ const Sim = (() => {
   // ===== V3.5：主角（玩家化身）——WASD 操控、碰警車觸發盤查 =====
   const keys = {};  // 按住的鍵：{ up, down, left, right }
   function setKey(dir, on) { keys[dir] = !!on; }
+  function isKeyDown(dir) { return !!keys[dir]; }   // v0.3.2：急停判定用（keyup 當下 moving 旗標還沒翻）
   let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
   const OFFROAD_DIST = 0.0012;   // 離最近街道點超過此距離（~130m）＝離路（路網點間距大，走在兩點間的路段上不可誤判）
-  const OFFROAD_SLOW = 0.35;     // 離路減速係數（V3.7.1：0.5→0.35，QA 實玩對比仍不足）
+  const OFFROAD_SLOW = 0.45;     // 離路減速係數（v0.3.2：0.35→0.45——QA 實測極深處 247.9m/1.6s 低於路上均速一半，太黏；對比感靠頓挫＋投影吸附維持）
   let heroStall = false;         // 移動中跨進離路的第一步頓挫旗標
   let heroWasOffRoad = false;    // 上一 tick 的離路狀態（頓挫邊緣判定用）
 
@@ -549,6 +552,51 @@ const Sim = (() => {
     return true;
   }
 
+  // ===== v0.5.0 升級系統（放置掛機核心）=====
+  // 樹定義在 data.js UPGRADE_TREE；等級存 S.upgrades（舊檔補 {}）。
+  // eff(id)：該節點當前等級的總效果值——其他系統吃這個鉤子（報酬/開銷/風險/速度…）。
+  function upgradeNode(id) {
+    for (const tab in UPGRADE_TREE) {
+      const n = UPGRADE_TREE[tab].find((x) => x.id === id);
+      if (n) return n;
+    }
+    return null;
+  }
+  function upgradeLevel(id) { return (S && S.upgrades[id]) || 0; }
+  function upgradeCost(id) {
+    const n = upgradeNode(id);
+    if (!n) return 0;
+    return Math.round(n.base * Math.pow(n.mult, upgradeLevel(id)));
+  }
+  function buyUpgrade(id) {
+    const n = upgradeNode(id);
+    if (!n || !S) return false;
+    const lv = upgradeLevel(id);
+    if (lv >= n.max) { emit('toast', { icon: '🔝', text: `${n.name} 已滿級` }); return false; }
+    const cost = upgradeCost(id);
+    if (S.money < cost) { emit('toast', { icon: '💸', text: `錢不夠——${n.name} 要 $${cost.toLocaleString()}` }); return false; }
+    S.money -= cost;
+    S.upgrades[id] = lv + 1;
+    emit('toast', { icon: n.icon, text: `${n.name} Lv.${lv + 1}——${n.effName} ${n.fmt(n.eff(lv + 1))}` });
+    emit('upgrades');
+    after();
+    return true;
+  }
+  function getUpgradeTree() {
+    const out = {};
+    for (const tab in UPGRADE_TREE) {
+      out[tab] = UPGRADE_TREE[tab].map((n) => ({
+        id: n.id, icon: n.icon, name: n.name, desc: n.desc, tab: n.tab,
+        max: n.max, level: upgradeLevel(n.id), cost: upgradeCost(n.id),
+        effName: n.effName, cur: n.fmt(n.eff(upgradeLevel(n.id))),
+        next: upgradeLevel(n.id) < n.max ? n.fmt(n.eff(upgradeLevel(n.id) + 1)) : null,
+      }));
+    }
+    return out;
+  }
+  // 效果鉤子統一入口（其他系統呼叫）：
+  const upEff = (id) => { const n = upgradeNode(id); return n ? n.eff(upgradeLevel(id)) : 1; };
+
   function heatTick() {
     if (!S || !S.hero) return;
     const pos = S.hero.pos;
@@ -564,7 +612,7 @@ const Sim = (() => {
         if (Math.hypot(c.lat - pos.lat, c.lng - pos.lng) < HEAT.SIGHT_R) { d += HEAT.COP_SIGHT; break; }
       }
     }
-    S.heat = clamp100((S.heat || 0) + d);
+    S.heat = clamp100((S.heat || 0) + (d > 0 ? d * upEff('heatshield') : d));   // v0.5.0：反追蹤訓練——累積打折（降溫不打折）
     // v0.4.1 項5：heat 跨檔時主動 refresh 巡查車（豁免格子重算）——不只靠 moveend/min%60
     const lvl = S.heat >= HEAT.HUNT_MIN ? 2 : S.heat >= HEAT.SHIFT_MIN ? 1 : 0;
     if (lvl !== heatRefreshLvl) {
@@ -578,7 +626,7 @@ const Sim = (() => {
       if (Math.random() < (S.heat < 70 ? 0.12 + (S.heat - HEAT.HUNT_MIN) * 0.005 : 0.04 + (S.heat - HEAT.HUNT_MIN) * 0.004)) {
         heroCheckCd = gameMin() + 30;
         paused = true;
-        S.heat = clamp100(S.heat + HEAT.CHECKED);
+        S.heat = clamp100(S.heat + Math.max(0, HEAT.CHECKED - upgradeLevel('checkshield') * 3));   // v0.5.0：假證件工坊——查崗 heat -3/級
         emit('heroCheck', pos);
         emit('toast', { icon: '🚨', text: '麻煩找上門了——對方盯上你一陣子了' });
       }
@@ -652,15 +700,21 @@ const Sim = (() => {
       let nlng = p.lng + (dx / d) * base;
       const snap = nearestRoad(nlat, nlng);
       if (snap) {
-        // 貼路力：隨距離連續衰減（v0.3.1：原本三檔階梯會在檔位切換處突變——QA 觀察的
-        // 「騎樓小頓挫」就是它）——0.0004 內 0.55 線性降到 0.0024 處 0.05，無階梯
+        // 貼路力：隨距離連續衰減——0.0004 內 0.55 線性降到 0.0024 處 0.05，無階梯
         let k = Math.max(0.05, 0.55 - (snap.dist / 0.0024) * 0.5);
-        // v0.3.1 脫困對稱性：移動方向朝著最近路網點（內積 < 0，往路上走）→ 吸附減半——
-        // 「進去難、出來相對容易」，誤入建築後回街不會像在糖漿裡游泳
-        const towardRoad = (snap.lat - p.lat) * (-dy / d) + (snap.lng - p.lng) * (dx / d);
-        if (towardRoad < 0) k *= 0.5;
-        nlat += (snap.lat - nlat) * k;
-        nlng += (snap.lng - nlng) * k;
+        // v0.3.2 吸附投影化：吸附力只作用在「移動方向的分量」——橫向拉扯是 QA 實測
+        // 「往路反而慢 1.56 倍」的根因（最近路網點可能在橫向/後方，吸附向量與前進方向
+        // 夾角大，橫向分量吃掉前進速度）。投影後：往前走＝沿路滑不偏航，橫向自動衰減。
+        // 脫困對稱性一併涵蓋：朝路走時投影分量為正（向前加速）、背路走為負（向後拖），
+        // 投影負值截斷為 0（背路不倒退、只失去吸附增益）
+        const snapVec = { lat: snap.lat - nlat, lng: snap.lng - nlng };
+        // v0.3.2 吸附投影：吸附位移 = moveDot（吸附向量在移動方向上的純量投影）× 移動單位向量 × k。
+        // 橫向分量完全消滅（往路走時不被橫向拉扯減速）；moveDot 負（最近點在後方）→ 吸附不對抗移動
+        const moveDot = snapVec.lat * (-dy / d) + snapVec.lng * (dx / d);
+        const signedK = moveDot >= 0 ? k : 0;   // 最近點在後方：不吸附（也不倒退）
+        nlat += (-dy / d) * moveDot * k * (moveDot >= 0 ? 1 : 0);
+        nlng += (dx / d) * moveDot * k * (moveDot >= 0 ? 1 : 0);
+        nlng += snapVec.lng * k * Math.min(1, Math.abs(moveDot) / (snap.dist || 1));
       }
       p.lat = nlat; p.lng = nlng;
       S.hero.moving = true;
@@ -681,7 +735,7 @@ const Sim = (() => {
           if (Math.random() < 0.35) {   // 撞上了，但七成機率對方沒注意你——放行
             heroCheckCd = gameMin() + 30;
             paused = true;
-            S.heat = clamp100((S.heat || 0) + HEAT.CHECKED);   // v0.4.0：被查崗 heat +15
+            S.heat = clamp100((S.heat || 0) + Math.max(0, HEAT.CHECKED - upgradeLevel('checkshield') * 3));   // v0.4.0：被查崗 heat +15（v0.5.0 假證件工坊減免）
             emit('heroCheck', S.hero.pos);
           } else {
             heroCheckCd = gameMin() + 6;  // 這次沒事，短冷卻後再算
@@ -697,7 +751,8 @@ const Sim = (() => {
   function useDurable(gearId, label) {
     if (!S.gear[gearId]) return false;
     S.gearUses = S.gearUses || {};
-    S.gearUses[gearId] = S.gearUses[gearId] === undefined ? DURABLE_USES - 1 : S.gearUses[gearId] - 1;
+    const maxUses = gearId === 'plate' || gearId === 'vpn' ? upEff('durablesave') : DURABLE_USES;   // v0.5.0：自製工具——耐久 +2/級
+    S.gearUses[gearId] = S.gearUses[gearId] === undefined ? maxUses - 1 : S.gearUses[gearId] - 1;
     if (S.gearUses[gearId] <= 0) {
       delete S.gear[gearId]; delete S.gearUses[gearId];
       emit('toast', { icon: '🧰', text: `${label}用完了——壽終正寢，得再去買一組` });
@@ -987,7 +1042,7 @@ const Sim = (() => {
 
   function dailyFood() {
     if (S.buildings.tank) S.food = Math.min(FOOD_MAX, S.food + FOOD_TANK);
-    const eat = S.members.length * (S.buildings.kitchen ? 1 : FOOD_EAT);
+    const eat = Math.ceil(S.members.length * (S.buildings.kitchen ? 1 : FOOD_EAT) * (upEff('foodsave') / 2));   // v0.5.0：大鍋炒——伙食 -1/人（eff 回 2-lv，除以 2 得倍率）
     S.food -= eat;
     if (S.food < 0) {
       S.food = 0;
@@ -1046,8 +1101,9 @@ const Sim = (() => {
   }
 
   // v0.4.0 乙：每天 21:00 的園區開銷——成員×800＋建築×1500（招募/蓋建築有長期成本，錢有去處）
+  // v0.5.0：省錢大全——開銷 -7%/級
   function upkeepCost() {
-    return S.members.length * UPKEEP.PER_MEMBER + Object.keys(S.buildings).length * UPKEEP.PER_BUILDING;
+    return Math.round((S.members.length * UPKEEP.PER_MEMBER + Object.keys(S.buildings).length * UPKEEP.PER_BUILDING) * upEff('upkeepcut'));
   }
 
   function rollRaid() {
@@ -1205,6 +1261,7 @@ const Sim = (() => {
     // v0.4.0 乙：裝備耐久欄位（舊檔補 0；首次消耗時會初始化為滿耐久）
     if (!S.gearUses) S.gearUses = {};
     if (S.heat === undefined) S.heat = 0;   // v0.4.0 甲：舊存檔補 heat 0
+    if (!S.upgrades) S.upgrades = {};        // v0.5.0 升級樹：舊檔補空表
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
@@ -1247,12 +1304,14 @@ const Sim = (() => {
     return true;
   }
 
-  function memberCap() { return MEMBER_CAP_BASE + (S.buildings && S.buildings.dorm ? 3 : 0); }
+  // v0.5.0：工寮擴建（capboost）併入上限——基礎 +3（宿舍）+ 每級 +1
+  function memberCap() { return MEMBER_CAP_BASE + (S.buildings && S.buildings.dorm ? 3 : 0) + upgradeLevel('capboost'); }
 
   function hire() {
     if (S.members.length >= memberCap()) { emit('toast', { icon: '🛖', text: '工寮不夠住——先蓋工寮才招得到人' }); return null; }
-    if (S.money < PRICES.hire) { emit('toast', { icon: '💸', text: '錢不夠' }); return null; }
-    S.money -= PRICES.hire;
+    const hireCost = Math.round(PRICES.hire * upEff('hirecut'));   // v0.5.0：人力仲介——招募費 -10%/級
+    if (S.money < hireCost) { emit('toast', { icon: '💸', text: '錢不夠' }); return null; }
+    S.money -= hireCost;
     const mem = makeMember();
     S.members.push(mem);
     after();
@@ -1315,9 +1374,10 @@ const Sim = (() => {
     state: () => S,
     isPaused: () => paused,
     hour, policeDensity, clockStr, gameMin,
-    setKey, resolveHeroCheck,  // V3.5 主角操控與盤查
+    setKey, isKeyDown, resolveHeroCheck,  // V3.5 主角操控與盤查
     poiList, poiNearHero, triggerPoi, chooseHeroEvent,  // V3.6-A 互動地標
     upkeepCost, useDurable, useDecoy,  // v0.4.0 乙＋v0.4.1：園區開銷、裝備耐久、壓熱消耗品
     heatLevel: () => (S ? S.heat || 0 : 0),  // v0.4.0 甲：heat 讀數（map.js 紅暈與巡查車偏移用）
+    getUpgradeTree, buyUpgrade, upgradeLevel, upgradeCost,  // v0.5.0 升級系統（UI 層只吃 API）
   };
 })();
