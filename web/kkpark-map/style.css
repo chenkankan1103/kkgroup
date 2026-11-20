@@ -531,7 +531,7 @@ button.plan:disabled { opacity: 0.45; cursor: not-allowed; }
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
-.dock-note { font-size: 11px; color: var(--dim); opacity: 0.8; margin-bottom: 8px; }
+#dockBody button.mini:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--line); }
 .lv-tag { font-size: 10.5px; color: var(--cyan); margin-left: 4px; }
 /* 裝備耐久條：滿＝綠、中＝金、低＝紅（跟 HUD 條同一套語言） */
 .dur-box { text-align: right; min-width: 86px; flex: none; }

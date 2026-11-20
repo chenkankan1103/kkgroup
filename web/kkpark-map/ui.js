@@ -54,6 +54,7 @@ const UI = (() => {
     Sim.on('ending', showEnding);
     Sim.on('buildings', onBuildings);
     Sim.on('gear', () => Dock.refresh());  // v0.4.0 乙：耐久耗盡事件 → 裝備分頁重畫
+    Sim.on('upgrades', () => Dock.refresh());  // v0.5.0：升級購買事件 → dock 重畫
     GameMap.cb.missionClick = openMission;
     GameMap.cb.hqClick = openHqRaid;
     GameMap.cb.cellClick = openCellPanel;
