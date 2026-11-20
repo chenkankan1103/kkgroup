@@ -89,8 +89,6 @@ const Dock = (() => {
 
   function renderGear() {
     const S = Sim.state(); if (!S) return;
-    // 耐久上限跟著「自製工具」升級走（DURABLE_USES + lv*2，與 sim 同式）
-    const usesMax = DURABLE_USES + Sim.upgradeLevel('durablesave') * 2;
     $('dockBody').innerHTML = `
       ${Sim.getUpgradeTree().gear.map(upRow).join('')}
       <div class="shop-sec">🛒 添購裝備</div>
@@ -101,11 +99,8 @@ const Dock = (() => {
         if (!owned) {
           right = `<button class="mini" data-gear="${g.id}" data-cost="${g.price}"${S.money >= g.price ? '' : ' disabled'}>$${g.price.toLocaleString()}</button>`;
         } else if (g.durable) {
-          const pct = Math.max(0, (uses / usesMax) * 100);
-          const cls = pct <= 40 ? 'low' : pct <= 70 ? 'mid' : '';
-          right = `<div class="dur-box">
-            <div class="dur-track"><div class="dur-fill ${cls}" style="width:${pct}%"></div></div>
-            <small>耐久 ${uses}/${usesMax}</small></div>`;
+          // v0.5.1 耐久語意（寫手 A 裁決）：起始耐久買入時寫死，分母概念不存在——只顯示剩餘次數文字
+          right = `<span class="dur-uses${uses <= 1 ? ' danger' : ''}">剩 ${uses} 次</span>`;
         } else {
           right = '<span class="owned-tag">✅</span>';
         }

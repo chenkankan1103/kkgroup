@@ -534,12 +534,9 @@ button.plan:disabled { opacity: 0.45; cursor: not-allowed; }
 #dockBody button.mini:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--line); }
 .lv-tag { font-size: 10.5px; color: var(--cyan); margin-left: 4px; }
 /* 裝備耐久條：滿＝綠、中＝金、低＝紅（跟 HUD 條同一套語言） */
-.dur-box { text-align: right; min-width: 86px; flex: none; }
-.dur-box small { font-size: 10px; color: var(--dim); }
-.dur-track { height: 6px; border-radius: 3px; background: rgba(42, 51, 72, 0.9); overflow: hidden; margin-bottom: 2px; }
-.dur-fill { height: 100%; background: var(--green); transition: width 0.4s; }
-.dur-fill.mid { background: var(--gold); }
-.dur-fill.low { background: var(--red); }
+/* v0.5.1 耐久語意：只剩剩餘次數文字（分母概念不存在，條退役） */
+.dur-uses { font-size: 12px; color: var(--green); white-space: nowrap; flex: none; }
+.dur-uses.danger { color: var(--red); animation: foodBlink 1.2s ease-in-out infinite; }
 /* 營運：帳單結論條＋熱度計 */
 .ops-verdict {
   border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px;
