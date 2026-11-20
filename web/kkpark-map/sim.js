@@ -527,9 +527,10 @@ const Sim = (() => {
   // ===== V3.5：主角（玩家化身）——WASD 操控、碰警車觸發盤查 =====
   const keys = {};  // 按住的鍵：{ up, down, left, right }
   function setKey(dir, on) { keys[dir] = !!on; }
+  function isKeyDown(dir) { return !!keys[dir]; }   // v0.3.2：急停判定用（keyup 當下 moving 旗標還沒翻）
   let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
   const OFFROAD_DIST = 0.0012;   // 離最近街道點超過此距離（~130m）＝離路（路網點間距大，走在兩點間的路段上不可誤判）
-  const OFFROAD_SLOW = 0.35;     // 離路減速係數（V3.7.1：0.5→0.35，QA 實玩對比仍不足）
+  const OFFROAD_SLOW = 0.45;     // 離路減速係數（v0.3.2：0.35→0.45——QA 實測極深處 247.9m/1.6s 低於路上均速一半，太黏；對比感靠頓挫＋投影吸附維持）
   let heroStall = false;         // 移動中跨進離路的第一步頓挫旗標
   let heroWasOffRoad = false;    // 上一 tick 的離路狀態（頓挫邊緣判定用）
 
@@ -652,15 +653,21 @@ const Sim = (() => {
       let nlng = p.lng + (dx / d) * base;
       const snap = nearestRoad(nlat, nlng);
       if (snap) {
-        // 貼路力：隨距離連續衰減（v0.3.1：原本三檔階梯會在檔位切換處突變——QA 觀察的
-        // 「騎樓小頓挫」就是它）——0.0004 內 0.55 線性降到 0.0024 處 0.05，無階梯
+        // 貼路力：隨距離連續衰減——0.0004 內 0.55 線性降到 0.0024 處 0.05，無階梯
         let k = Math.max(0.05, 0.55 - (snap.dist / 0.0024) * 0.5);
-        // v0.3.1 脫困對稱性：移動方向朝著最近路網點（內積 < 0，往路上走）→ 吸附減半——
-        // 「進去難、出來相對容易」，誤入建築後回街不會像在糖漿裡游泳
-        const towardRoad = (snap.lat - p.lat) * (-dy / d) + (snap.lng - p.lng) * (dx / d);
-        if (towardRoad < 0) k *= 0.5;
-        nlat += (snap.lat - nlat) * k;
-        nlng += (snap.lng - nlng) * k;
+        // v0.3.2 吸附投影化：吸附力只作用在「移動方向的分量」——橫向拉扯是 QA 實測
+        // 「往路反而慢 1.56 倍」的根因（最近路網點可能在橫向/後方，吸附向量與前進方向
+        // 夾角大，橫向分量吃掉前進速度）。投影後：往前走＝沿路滑不偏航，橫向自動衰減。
+        // 脫困對稱性一併涵蓋：朝路走時投影分量為正（向前加速）、背路走為負（向後拖），
+        // 投影負值截斷為 0（背路不倒退、只失去吸附增益）
+        const snapVec = { lat: snap.lat - nlat, lng: snap.lng - nlng };
+        // v0.3.2 吸附投影：吸附位移 = moveDot（吸附向量在移動方向上的純量投影）× 移動單位向量 × k。
+        // 橫向分量完全消滅（往路走時不被橫向拉扯減速）；moveDot 負（最近點在後方）→ 吸附不對抗移動
+        const moveDot = snapVec.lat * (-dy / d) + snapVec.lng * (dx / d);
+        const signedK = moveDot >= 0 ? k : 0;   // 最近點在後方：不吸附（也不倒退）
+        nlat += (-dy / d) * moveDot * k * (moveDot >= 0 ? 1 : 0);
+        nlng += (dx / d) * moveDot * k * (moveDot >= 0 ? 1 : 0);
+        nlng += snapVec.lng * k * Math.min(1, Math.abs(moveDot) / (snap.dist || 1));
       }
       p.lat = nlat; p.lng = nlng;
       S.hero.moving = true;
@@ -1315,7 +1322,7 @@ const Sim = (() => {
     state: () => S,
     isPaused: () => paused,
     hour, policeDensity, clockStr, gameMin,
-    setKey, resolveHeroCheck,  // V3.5 主角操控與盤查
+    setKey, isKeyDown, resolveHeroCheck,  // V3.5 主角操控與盤查
     poiList, poiNearHero, triggerPoi, chooseHeroEvent,  // V3.6-A 互動地標
     upkeepCost, useDurable, useDecoy,  // v0.4.0 乙＋v0.4.1：園區開銷、裝備耐久、壓熱消耗品
     heatLevel: () => (S ? S.heat || 0 : 0),  // v0.4.0 甲：heat 讀數（map.js 紅暈與巡查車偏移用）
