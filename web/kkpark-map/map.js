@@ -89,10 +89,14 @@ const GameMap = (() => {
     return [chain[i][0] + (chain[i + 1][0] - chain[i][0]) * f, chain[i][1] + (chain[i + 1][1] - chain[i][1]) * f];
   }
 
+  // v0.4.2 警察凍結修：clearLayers 銷毀重建會打斷 CSS transition（新元素無起始位置可補間，
+  // 全部瞬移＋等下一個 tickCops 節拍才動）——主角移動時 heat 跨檔頻繁觸發，看起來像整隊凍結。
+  // 改「對齊式更新」：車的唯一 key = ci:i0:dir:k（決定性），同 key 復用舊 marker（setLatLng 平滑）
+  const copMarkerPool = {};   // key -> marker
   function refreshPolice() {
     if (!map) return;
-    mPolice.clearLayers();
     copsLive = [];
+    const seen = {};
     const z = map.getZoom();
     if (z < 12) return;
     if (!roadIdx) { if (typeof ROAD_NET === 'undefined' || !ROAD_NET.length) return; buildRoadIndex(); }
@@ -125,21 +129,42 @@ const GameMap = (() => {
         let dens2 = dens;
         if (zone === 'police' || zone === 'contested') dens2 *= TURF.COP_BOOST_POLICE;
         else if (zone === 'park') dens2 *= TURF.COP_SUPPRESS_PARK;
+        // v0.4.0 甲：heat 31+ 主角周邊巡查密度上調——「對方盯上你了」，車真的變多；
+        // 門檻已飽和（dens2×0.9 命中率極高），乘倍率無效——改用「豁免格子」：heat 越高，
+        // 沒過 hash 門檻的格子也有機率強制放行（每 6-2 格一台，決定性、不破 copPos 路線）
+        const heat = typeof Sim.heatLevel === 'function' ? Sim.heatLevel() : 0;
+        const forceEvery = heat >= HEAT.HUNT_MIN ? 2 : heat >= HEAT.SHIFT_MIN ? 4 : 0;   // 61+ 每 2 格、31+ 每 4 格
         for (let k = 0; k < 2; k++) {
-          if (hash3(cx, cy, 7 + k) < dens2 * 0.9) {  // V3.5：0.45→0.9——主角走動視角下高倍率時視野格子太少，原門檻會開空窗（碰撞互動需要車常駐可見）
+          const roll = hash3(cx, cy, 7 + k);
+          const forced = forceEvery > 0 && ((cx * 3 + cy + k) % forceEvery === 0);
+          if (roll < dens2 * 0.9 || forced) {  // V3.5：0.45→0.9——主角走動視角下高倍率時視野格子太少，原門檻會開空窗（碰撞互動需要車常駐可見）
             const e = pts[(hash3(cx, cy * 3 + k, 11) * pts.length) | 0];
             const dir = hash3(cx * 3 + k, cy, 29) < 0.5 ? 1 : -1;
             const t = Sim.gameMin();
-            const mk = L.marker(copPos(e.c, e.i, dir, t), { icon: divIcon('🚔', [20, 20], 'cop-icon'), interactive: false }).addTo(mPolice);
+            const key = e.c + ':' + e.i + ':' + dir + ':' + k;
+            seen[key] = true;
+            let mk = copMarkerPool[key];
+            if (mk) {
+              // 復用：setLatLng 平滑補間（transition 不被打斷）
+              try { mk.setLatLng(copPos(e.c, e.i, dir, t)); } catch (err) {}
+            } else {
+              mk = L.marker(copPos(e.c, e.i, dir, t), { icon: divIcon('🚔', [20, 20], 'cop-icon'), interactive: false }).addTo(mPolice);
+              copMarkerPool[key] = mk;
+            }
             copsLive.push({ mk, ci: e.c, i0: e.i, dir });
             n++;
           }
         }
       }
     }
+    // 收掉這輪沒看到的車（出視野／密度變化）——從 pool 與圖層移除
+    for (const key in copMarkerPool) {
+      if (!seen[key]) { try { mPolice.removeLayer(copMarkerPool[key]); } catch (err) {} delete copMarkerPool[key]; }
+    }
   }
 
   // 每 5 遊戲分鐘（5 真實秒）把可視警車的目標推進到 5 分鐘後的位置，CSS 補間滑過去
+  // （v0.4.0：heat 追蹤感改由 refreshPolice 的密度上調承接，這裡維持決定性路線不動）
   function tickCops() {
     if (!copsLive.length) return;
     const t = Sim.gameMin();
@@ -566,14 +591,15 @@ const GameMap = (() => {
     document.addEventListener('keyup', (e) => {
       const dir = KEYMAP[e.code];
       if (dir) Sim.setKey(dir, false);
-      // v0.3.1 急停：鬆鍵瞬間掐斷進行中的 1s 補間——先把 transition 關掉、跳到 sim 當前落點、
-      // 再換 0.4s class 補完殘餘距離（否則最後一個 tick 的 1s 滑行會拖出 1.4 秒的冰面感）
+      // v0.3.2 急停時序修正：不看 S.hero.moving（它要等下一個 heroTick 才翻 false，
+      // keyup 當下恆 true → 急停分支永遠跳過＝1.8 秒滑尾）。改查「還有沒有其他鍵按著」——
+      // Sim.setKey(false) 剛跑完，keys 全空才算停。
+      const othersDown = ['up', 'down', 'left', 'right'].some((d) => Sim.isKeyDown(d));
       const S = Sim.state();
-      const stillMoving = S && S.hero && S.hero.moving;
-      if (heroMarker && !stillMoving) {
+      if (heroMarker && !othersDown && S && S.hero) {
         const el = heroMarker.getElement();
         if (el) el.style.transition = 'none';
-        if (S && S.hero) heroMarker.setLatLng([S.hero.pos.lat, S.hero.pos.lng]);
+        heroMarker.setLatLng([S.hero.pos.lat, S.hero.pos.lng]);
         el.style.transition = '';
         el.classList.add('hero-stopping');
       }

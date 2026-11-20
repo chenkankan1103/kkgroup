@@ -3,7 +3,7 @@
 
 // 遊戲內時鐘：1 真實秒 = 1 遊戲分鐘（1 真實分鐘 ≈ 1 遊戲小時）
 const TICK_MS = 1000;
-const GAME_VERSION = 'v0.3.1';   // 語義版本：0.3.0 核心迴圈＋移動手感；0.3.1 移動微調（頓挫/immersed/停步補間）
+const GAME_VERSION = 'v0.5.0';   // 語義版本：0.4.x 緊張感＋平衡；0.5.0 升級系統（放置掛機核心迴圈）
 
 // 各時段巡邏密度（0-23 時）——深夜安靜、白天最多
 const POLICE_DENSITY = [
@@ -135,6 +135,64 @@ const UPKEEP = {
 const DURABLE_USES = 5;              // 耐久：贓車牌/VPN 各 5 次
 const LOW_MONEY_WARN = 20000;        // 錢低於此 → 任務面板接單發光
 
+// ===== v0.5.0 升級系統（放置掛機核心迴圈）=====
+// 節點樹三頁：upgrade（產能鏈）／gear（裝備耐久強化）／ops（營運擴張）。
+// 成本曲線：cost = base × mult^level（經典放置公式）——「攢兩三單買得起」。
+// effect: 每級鉤子，效能可量化；eff() 回傳該節點「當前等級的總效果值」。
+// unlock: 可選，滿足條件才出現（函式吃 S）。
+const UPGRADE_TREE = {
+  upgrade: [
+    { id: 'paymult',  tab: 'upgrade', icon: '📈', name: '話術手冊', desc: '任務報酬 +8%/級',
+      base: 12000, mult: 1.22, max: 10,
+      eff: (lv) => 1 + lv * 0.08, effName: '任務報酬', fmt: (v) => '+' + Math.round((v - 1) * 100) + '%' },
+    { id: 'upkeepcut', tab: 'upgrade', icon: '🧾', name: '省錢大全', desc: '園區開銷 -7%/級',
+      base: 10000, mult: 1.25, max: 8,
+      eff: (lv) => Math.max(0.3, 1 - lv * 0.07), effName: '開銷折扣', fmt: (v) => '-' + Math.round((1 - v) * 100) + '%' },
+    { id: 'foodsave', tab: 'upgrade', icon: '🍚', name: '大鍋炒', desc: '伙食消耗 -1/人（最低 0.5）',
+      base: 9000, mult: 1.3, max: 3,
+      eff: (lv) => Math.max(0.5, 2 - lv), effName: '每人伙食', fmt: (v) => v + ' 份' },
+    { id: 'durablesave', tab: 'upgrade', icon: '🧰', name: '自製工具', desc: '裝備耐久 +2 次/級（假車牌/VPN）',
+      base: 15000, mult: 1.28, max: 5,
+      eff: (lv) => DURABLE_USES + lv * 2, effName: '裝備耐久', fmt: (v) => v + ' 次' },
+  ],
+  gear: [
+    { id: 'heatshield', tab: 'gear', icon: '🛡️', name: '反追蹤訓練', desc: 'heat 累積 -8%/級',
+      base: 14000, mult: 1.24, max: 6,
+      eff: (lv) => Math.max(0.3, 1 - lv * 0.08), effName: 'heat 累積', fmt: (v) => '-' + Math.round((1 - v) * 100) + '%' },
+    { id: 'checkshield', tab: 'gear', icon: '🪪', name: '假證件工坊', desc: '被查崗的 heat +15 → -3/級',
+      base: 18000, mult: 1.26, max: 4,
+      eff: (lv) => Math.max(0, HEAT.CHECKED - lv * 3), effName: '查崗 heat', fmt: (v) => '+' + v },
+    { id: 'riskcut', tab: 'gear', icon: '🎯', name: '風險評估課', desc: '任務基礎風險 -6%/級',
+      base: 22000, mult: 1.3, max: 5,
+      eff: (lv) => Math.max(0.5, 1 - lv * 0.06), effName: '任務風險', fmt: (v) => '-' + Math.round((1 - v) * 100) + '%' },
+  ],
+  ops: [
+    { id: 'capboost', tab: 'ops', icon: '🛖', name: '工寮擴建', desc: '成員上限 +1/級',
+      base: 25000, mult: 1.35, max: 4,
+      eff: (lv) => MEMBER_CAP_BASE + 3 + lv, effName: '成員上限', fmt: (v) => v + ' 人' },
+    { id: 'speedboot', tab: 'ops', icon: '🛵', name: '機動調度', desc: '成員移動速度 +6%/級',
+      base: 16000, mult: 1.22, max: 8,
+      eff: (lv) => 1 + lv * 0.06, effName: '移動速度', fmt: (v) => '+' + Math.round((v - 1) * 100) + '%' },
+    { id: 'hirecut', tab: 'ops', icon: '🤝', name: '人力仲介', desc: '招募費 -10%/級',
+      base: 12000, mult: 1.25, max: 5,
+      eff: (lv) => Math.max(0.4, 1 - lv * 0.1), effName: '招募費', fmt: (v) => '-' + Math.round((1 - v) * 100) + '%' },
+  ],
+};
+// ===== v0.4.0 甲：曝光度（heat）——「被發現」的恐懼系統化 =====
+const HEAT = {
+  STREET: 0.3,          // 離開總部（綠圈外）每分鐘累積
+  COP_SIGHT: 1.0,       // 巡查車 120m 視線內每分鐘累積
+  POLICE_ZONE: 0.8,     // 紅圈（警方勢力瓣）內每分鐘累積
+  CHECKED: 15,          // 被查崗一次 +15
+  COOL_HOME: 0.5,       // 總部/綠圈內每分鐘降溫
+  MAX: 100,
+  SHIFT_MIN: 31,        // 31-60：巡查車巡邏落點往主角偏移
+  HUNT_MIN: 61,         // 61+：主動查崗（對方開過來）＋任務風險 +10%
+  SIGHT_R: 0.0011,      // 視線半徑（度）≈120m
+  RISK_ADD: 0.10,       // 61+ 時任務風險加成
+  DECOY_PRICE: 8000,    // 「壓熱」消耗品單價（贏一次壓熱 -30）
+};
+
 const PRICES = { bail: 20000, bailPerMin: 2000, hire: 25000, intel: 30000 };
 const INTEL_BUY_POLICE = 15; // 花錢買情報一次加的警方進度
 const LONG = { durMult: 4, durAdd: 120, payMult: 2.2, riskAdd: 0.12 }; // 大活模式
@@ -241,7 +299,7 @@ const TW = {
 const TURF = {
   POLICE_CENTER: { lat: HQ.lat + 0.026, lng: HQ.lng + 0.024 },  // 分局核心（東北 ~3.5km）
   POLICE_SUBS: 4,          // 分局周邊路網上決定性挑幾個「派出所」瓣
-  PARK_BASE: 0.012, PARK_TRUST: 0.00022,     // 詐團瓣半徑 = 0.012 + 信任 × 0.00022（信任 60 → 2.5km）
+  PARK_BASE: 0.005, PARK_TRUST: 0.00012,     // v0.4.1：綠圈砍 1/4（信任 60 → ~0.0122° ≈1.4km）——地盤視覺跟「家的安全感」對齊，常活動區會累積 heat
   POLICE_BASE: 0.011, POLICE_PROG: 0.0002, POLICE_SUS: 0.0001, // 警方瓣半徑（滿進度時紅瓣壓到園區門口）
   COP_BOOST_POLICE: 1.4, COP_SUPPRESS_PARK: 0.65,  // 圈內巡邏車密度修正
   ZONES: {
