@@ -53,6 +53,7 @@ const Sim = (() => {
       })(),  // V3.5 主角（偏移避開門口巡查熱點＋吸附街上，離路減速不會一開局就觸發）
       poiCd: {}, poiUnlock: false,   // V3.6-A 互動地標：各地標冷卻時間、新任務來源解鎖旗標
       upgrades: {},                   // v0.5.0 升級樹：{ nodeId: level }
+      gearUses: {},                   // v0.5.1：裝備耐久（買入時依 durablesave 等級寫入終身 max）
       heat: 0,                        // v0.4.0 甲：曝光度（重開局歸零；存檔保留才有連續感）
     };
     for (let i = 0; i < START.members; i++) S.members.push(makeMember());
@@ -747,12 +748,14 @@ const Sim = (() => {
   }
 
   // 例行查崗抉擇（heroCheck 卡的三個選項）
-  // v0.4.0 乙：查崗後果的裝備抵用——假車牌/VPN 各有耐久 5 次，用一次少一次，歸零要重買
+  // v0.4.0 乙：查崗後果的裝備抵用——假車牌/VPN 有耐久（v0.5.1：買入當下的 durablesave 等級定終身 max），
+  // 用一次少一次，歸零要重買
   function useDurable(gearId, label) {
     if (!S.gear[gearId]) return false;
     S.gearUses = S.gearUses || {};
-    const maxUses = gearId === 'plate' || gearId === 'vpn' ? upEff('durablesave') : DURABLE_USES;   // v0.5.0：自製工具——耐久 +2/級
-    S.gearUses[gearId] = S.gearUses[gearId] === undefined ? maxUses - 1 : S.gearUses[gearId] - 1;
+    // 舊檔相容：買入前就擁有裝備的存檔沒有初始值——補當前等級的 max 再扣
+    if (S.gearUses[gearId] === undefined) S.gearUses[gearId] = upEff('durablesave');
+    S.gearUses[gearId] -= 1;
     if (S.gearUses[gearId] <= 0) {
       delete S.gear[gearId]; delete S.gearUses[gearId];
       emit('toast', { icon: '🧰', text: `${label}用完了——壽終正寢，得再去買一組` });
@@ -1325,6 +1328,12 @@ const Sim = (() => {
     if (S.money < g.price) { emit('toast', { icon: '💸', text: '錢不夠' }); return false; }
     S.money -= g.price;
     S.gear[id] = true;
+    S.gearUses = S.gearUses || {};   // 防呆：容器保證存在（newGame/遷移都有，保險）
+    // v0.5.1：起始耐久跟著買入當下的 durablesave 等級——買的時候付了多少耐久就是終身 max，
+    // 之後升級只影響之後買的（UI 分母讀 gearUses 初始值，語意直覺）
+    if (id === 'plate' || id === 'vpn') {
+      S.gearUses[id] = upEff('durablesave');
+    }
     after();
     emit('toast', { icon: g.icon, text: `入手 ${g.name}：${g.desc}` });
     return true;
