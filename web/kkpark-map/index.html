@@ -146,6 +146,18 @@
   </div>
 </div>
 
+<!-- v0.5.0 前哨：下方固定升級面板（放置掛機——手永遠有地方點） -->
+<div id="dock" class="hidden">
+  <div id="dockBody" class="hidden"></div>
+  <div id="dockStrip">
+    <button class="dock-tab" data-tab="up">⬆️ 升級</button>
+    <button class="dock-tab" data-tab="gear">🔧 裝備</button>
+    <button class="dock-tab" data-tab="ops">🧾 營運</button>
+    <div id="dockSummary">💰 $0</div>
+    <button id="dockToggle">▲</button>
+  </div>
+</div>
+
 <div id="toasts"></div>
 <div id="footNote">遊戲內地點皆屬虛構 · 地圖 © Esri, HERE, Garmin · 路網 © OpenStreetMap 貢獻者 (ODbL)</div>
 
@@ -158,5 +170,6 @@
 <script src="sim.js"></script>
 <script src="map.js"></script>
 <script src="ui.js"></script>
+<script src="dock.js"></script>
 </body>
 </html>
