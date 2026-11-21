@@ -432,19 +432,21 @@ const GameMap = (() => {
       cands.push({ ci: dci, pi: dpi, key, dot });
     }
     if (atEnd) {
-      // 鏈端跨鏈：全域找最近的其他鏈節點（距離 < 0.0003° ≈ 33m 視為同一路口接續）
+      // 鏈端跨鏈：全域找其他鏈的接續節點（<0.002° ≈220m——資料切鏈有間隙，33m 太小會誤判死路折返）
       const here = ROAD_NET[ci][pi];
-      for (let cj = 0; cj < ROAD_NET.length && cands.length < 2; cj++) {
+      for (let cj = 0; cj < ROAD_NET.length; cj++) {
         if (cj === ci) continue;
+        let bestJ = null, bestD = 0.002;
         for (let pj = 0; pj < ROAD_NET[cj].length; pj++) {
           const q = ROAD_NET[cj][pj];
           const d = Math.hypot(q[0] - here[0], q[1] - here[1]);
-          if (d < 0.0003) {
-            const len = d || 1e-9;
-            const dot = ((q[0] - here[0]) / len) * dLat + ((q[1] - here[1]) / len) * dLng;
-            cands.push({ ci: cj, pi: pj, key: cj + ':' + pj, dot });
-            break;   // 每條鄰鏈取一個最近節點
-          }
+          if (d < bestD) { bestD = d; bestJ = pj; }
+        }
+        if (bestJ !== null) {
+          const q = ROAD_NET[cj][bestJ];
+          const len = bestD || 1e-9;
+          const dot = ((q[0] - here[0]) / len) * dLat + ((q[1] - here[1]) / len) * dLng;
+          cands.push({ ci: cj, pi: bestJ, key: cj + ':' + bestJ, dot });
         }
       }
     }
