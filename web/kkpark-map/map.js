@@ -417,18 +417,42 @@ const GameMap = (() => {
     return best;
   }
   // 從 (ci,pi) 出發，選與移動方向 (dLat,dLng) 最對齊的相鄰節點；回 { ci, pi } 新位置
+  // 選下一段：排名制（選 dot 最大），prev 只在「有其他 dot>0 候選」時才排除——
+  // v0.5.3 回歸修：原本 dot>0.05 門檻在「鏈延伸方向與輸入相反」時殺掉唯一候選（主角折返同街）、
+  // avoid 無條件排除 prev 會擋掉路口掉頭、鏈尾沒有跨鏈連接＝斷鏈盡頭必折返
   function nextNetNode(ci, pi, dLat, dLng, avoid) {
-    let best = null, bestDot = -Infinity;
+    const cands = [];
+    const atEnd = pi - 1 < 0 || pi + 1 >= ROAD_NET[ci].length;   // 鏈端：找跨鏈接續
     for (const [dci, dpi] of [[ci, pi - 1], [ci, pi + 1]]) {
       if (dpi < 0 || dpi >= ROAD_NET[dci].length) continue;
       const key = dci + ':' + dpi;
-      if (avoid && avoid === key) continue;
       const p = ROAD_NET[dci][dpi];
       const len = Math.hypot(p[0] - ROAD_NET[ci][pi][0], p[1] - ROAD_NET[ci][pi][1]) || 1e-9;
       const dot = ((p[0] - ROAD_NET[ci][pi][0]) / len) * dLat + ((p[1] - ROAD_NET[ci][pi][1]) / len) * dLng;
-      if (dot > bestDot) { bestDot = dot; best = { ci: dci, pi: dpi, dot }; }
+      cands.push({ ci: dci, pi: dpi, key, dot });
     }
-    return bestDot > 0.05 ? best : null;   // 方向對齊才走（背向不算）
+    if (atEnd) {
+      // 鏈端跨鏈：全域找最近的其他鏈節點（距離 < 0.0003° ≈ 33m 視為同一路口接續）
+      const here = ROAD_NET[ci][pi];
+      for (let cj = 0; cj < ROAD_NET.length && cands.length < 2; cj++) {
+        if (cj === ci) continue;
+        for (let pj = 0; pj < ROAD_NET[cj].length; pj++) {
+          const q = ROAD_NET[cj][pj];
+          const d = Math.hypot(q[0] - here[0], q[1] - here[1]);
+          if (d < 0.0003) {
+            const len = d || 1e-9;
+            const dot = ((q[0] - here[0]) / len) * dLat + ((q[1] - here[1]) / len) * dLng;
+            cands.push({ ci: cj, pi: pj, key: cj + ':' + pj, dot });
+            break;   // 每條鄰鏈取一個最近節點
+          }
+        }
+      }
+    }
+    const forward = cands.filter((c) => c.dot > 0 && c.key !== avoid);
+    if (forward.length) return forward.sort((a, b) => b.dot - a.dot)[0];   // 前進候選擇 dot 最大（prev 可被擠掉＝路口能掉頭）
+    const any = cands.filter((c) => c.key !== avoid);
+    if (any.length) return any.sort((a, b) => b.dot - a.dot)[0];           // 全背向：掉頭（dot 最大那條）
+    return cands.length ? cands[0] : null;                                 // 單候選且是 prev：只能回頭（斷鏈盡頭）
   }
   // 主角滑行主迴圈：每幀沿鏈推進；按鍵全空→急停在原地；無路網→沿移動方向自由推進
   function heroGlideTick() {
@@ -472,13 +496,25 @@ const GameMap = (() => {
         const target = chain[heroNet.pi];
         const dSeg = Math.hypot(target[0] - p.lat, target[1] - p.lng);
         if (dSeg <= remain) {
-          // 抵達節點 → 選下一段（avoid 排除來時節點——不回頭震盪）
+          // 抵達節點 → 選下一段（avoid 排除來時節點——不回頭震盪；v0.5.3 斜向取主軸）
           p.lat = target[0]; p.lng = target[1];
           remain -= dSeg;
+          // 斜向輸入（W+D 同按）：正交路網沒有段能同時對齊兩分量——取主軸（較大分量）
+          // 為選段方向，副軸留給下次路口再轉（自然過彎）
+          const pickLat = Math.abs(dLat) >= Math.abs(dLng) ? Math.sign(dLat || 1) : 0;
+          const pickLng = pickLat === 0 ? Math.sign(dLng || 1) : 0;
           const prevKey = heroNet.prev || null;
-          const nxt = nextNetNode(heroNet.ci, heroNet.pi, dLat, dLng, prevKey);
-          if (!nxt) { heroNet = null; break; }   // 死路 → 退自由行走
-          heroNet = { ci: nxt.ci, pi: nxt.pi, prev: heroNet.ci + ':' + heroNet.pi };
+          const nxt = nextNetNode(heroNet.ci, heroNet.pi, pickLat, pickLng, prevKey);
+          if (!nxt) {
+            // 主軸死路 → 副軸再試（路口轉彎）
+            const altLat = pickLat === 0 ? Math.sign(dLat || 1) : 0;
+            const altLng = pickLng === 0 ? Math.sign(dLng || 1) : 0;
+            const alt = (altLat || altLng) ? nextNetNode(heroNet.ci, heroNet.pi, altLat, altLng, prevKey) : null;
+            if (!alt) { heroNet = null; break; }
+            heroNet = { ci: alt.ci, pi: alt.pi, prev: heroNet.ci + ':' + heroNet.pi };
+          } else {
+            heroNet = { ci: nxt.ci, pi: nxt.pi, prev: heroNet.ci + ':' + heroNet.pi };
+          }
         } else {
           // 段內推進
           const len = dSeg || 1e-9;
