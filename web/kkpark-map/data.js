@@ -3,7 +3,7 @@
 
 // 遊戲內時鐘：1 真實秒 = 1 遊戲分鐘（1 真實分鐘 ≈ 1 遊戲小時）
 const TICK_MS = 1000;
-const GAME_VERSION = 'v0.5.3';   // 語義版本：0.5.0 升級系統；0.5.1 耐久語意；0.5.2 手感；0.5.3 主角路網滑行。規則：行為改動即升 patch——版本號用途＝讓人確認手上是哪份 code
+const GAME_VERSION = 'v0.5.4';   // 語義版本：0.5.0 升級系統；0.5.1 耐久語意；0.5.2-0.5.3 手感；0.5.4 重平衡（道路是幫助不是牢籠）。規則：行為改動即升 patch——版本號用途＝讓人確認手上是哪份 code
 
 // 各時段巡邏密度（0-23 時）——深夜安靜、白天最多
 const POLICE_DENSITY = [
@@ -199,6 +199,8 @@ const LONG = { durMult: 4, durAdd: 120, payMult: 2.2, riskAdd: 0.12 }; // 大活
 
 // ===== V1.5：伙食與移動 =====
 const MOVE_DEG = 0.0014;    // v0.5.2：每遊戲分鐘移動 ≈155m（原 0.0028≈310m——步距太大，即使 CSS 補間也在 zoom 14 每秒滑 24px，體感偏跳；減半後 ~12px/秒接近警方巡查車的視覺節奏）
+const OFFROAD_DIST = 0.0012;   // v0.5.4 共用常數（map.js heroGlideTick 也用）：離最近街道點超過此距離（~130m）＝離路
+const OFFROAD_SLOW = 0.45;     // 離路減速係數（sim heroSpeed 打折用）
 const MOVE_CAR_MULT = 1.9;  // 有贓車時的移動速度倍率
 const START_FOOD = 25;      // 開場伙食庫存
 const FOOD_EAT = 2;         // 每人每天消耗（有廚房 → 1）
