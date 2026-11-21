@@ -198,7 +198,7 @@ const INTEL_BUY_POLICE = 15; // 花錢買情報一次加的警方進度
 const LONG = { durMult: 4, durAdd: 120, payMult: 2.2, riskAdd: 0.12 }; // 大活模式
 
 // ===== V1.5：伙食與移動 =====
-const MOVE_DEG = 0.0028;    // 每遊戲分鐘（=1 真實秒）移動距離 ≈ 310m，園區附近單程約 10 秒
+const MOVE_DEG = 0.0014;    // v0.5.2：每遊戲分鐘移動 ≈155m（原 0.0028≈310m——步距太大，即使 CSS 補間也在 zoom 14 每秒滑 24px，體感偏跳；減半後 ~12px/秒接近警方巡查車的視覺節奏）
 const MOVE_CAR_MULT = 1.9;  // 有贓車時的移動速度倍率
 const START_FOOD = 25;      // 開場伙食庫存
 const FOOD_EAT = 2;         // 每人每天消耗（有廚房 → 1）
