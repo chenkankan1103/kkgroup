@@ -495,3 +495,70 @@ button.plan:disabled { opacity: 0.45; cursor: not-allowed; }
   .panel { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 55vh; border-radius: 12px 12px 0 0; }
   .hud-bars { order: 3; max-width: none; }
 }
+
+/* ===== v0.5.0 前哨：下方固定升級面板（放置掛機——手永遠有地方點） ===== */
+#dock {
+  position: fixed; left: 268px; right: 318px; bottom: 10px; z-index: 900;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: opacity 0.7s;
+}
+#dockStrip {
+  display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 6px;
+  background: rgba(18, 23, 34, 0.96); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
+.dock-tab {
+  font-family: inherit; font-size: 12px; cursor: pointer;
+  background: none; color: var(--dim); border: 1px solid transparent;
+  border-radius: 7px; padding: 3px 8px; white-space: nowrap;
+}
+.dock-tab:hover { color: var(--txt); }
+.dock-tab.on { color: var(--cyan); border-color: var(--line); background: var(--panel2); }
+#dockSummary {
+  margin-left: auto; font-size: 12px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; min-width: 0;
+}
+#dockSummary b { color: var(--gold); }
+#dockToggle {
+  width: 26px; height: 24px; flex: none; cursor: pointer; font-size: 11px;
+  background: var(--panel2); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+#dockToggle:hover { color: var(--txt); border-color: var(--cyan); }
+#dockBody {
+  background: rgba(18, 23, 34, 0.97); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px; max-height: 40vh; overflow-y: auto;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+#dockBody button.mini:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--line); }
+.lv-tag { font-size: 10.5px; color: var(--cyan); margin-left: 4px; }
+/* 裝備耐久條：滿＝綠、中＝金、低＝紅（跟 HUD 條同一套語言） */
+/* v0.5.1 耐久語意：只剩剩餘次數文字（分母概念不存在，條退役） */
+.dur-uses { font-size: 12px; color: var(--green); white-space: nowrap; flex: none; }
+.dur-uses.danger { color: var(--red); animation: foodBlink 1.2s ease-in-out infinite; }
+/* 營運：帳單結論條＋熱度計 */
+.ops-verdict {
+  border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px;
+  font-size: 12.5px; margin: 6px 0; text-align: center;
+}
+.ops-verdict.ok { color: var(--green); border-color: rgba(77, 255, 157, 0.4); }
+.ops-verdict.bad { color: var(--red); border-color: rgba(255, 77, 109, 0.5); animation: foodBlink 1.2s ease-in-out infinite; }
+.heat-track { height: 8px; border-radius: 4px; background: rgba(42, 51, 72, 0.9); overflow: hidden; margin-bottom: 8px; }
+.heat-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--red)); transition: width 0.4s; }
+/* 數字跳動（放置遊戲爽點）：錢一變動就 pulse */
+.num-jump { display: inline-block; animation: numJump 0.5s cubic-bezier(0.2, 2.4, 0.4, 1); }
+@keyframes numJump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.4); color: var(--green); }
+  100% { transform: scale(1); }
+}
+/* toast 讓位：dock 展開時 JS 量測頂緣設 --dockLift，toast 抬到面板上方不被蓋 */
+#toasts { bottom: calc(20px + var(--dockLift, 0px)); }
+/* 貼近模式：跟 HUD／名冊一起淡出 */
+body.immersed #dock { opacity: 0.08; pointer-events: none; }
+body.immersed #dock > * { pointer-events: none; }
+
+@media (max-width: 720px) {
+  #dock { left: 0; right: 0; bottom: calc(34vh + 8px); }
+}
