@@ -403,18 +403,43 @@ const GameMap = (() => {
   let heroNet = null;          // { ci, pi, prev } 或 null（不在路上）
   let heroRaf = null;
   let heroLastTs = null;       // v0.5.3：dt 補償——背景分頁 rAF 節流時靠 renderHero 同步呼叫推進
+  let heroWasOffRoad = false;  // v0.5.4：頓挫邊緣判定（map.js 自己的狀態，渲染層擁有）
 
   // 找離 pos 最近的路網「節點」：回 { ci, pi, lat, lng }
-  function nearestNetNode(lat, lng) {
-    let best = null, bestD = Infinity;
+  // v0.5.4：格子索引（400m 格，一次建）——原本每幀線性掃 70k 點把 rAF 拖死
+  const NET_CELL = 0.004;
+  let netGrid = null;
+  function buildNetGrid() {
+    netGrid = new Map();
     for (let ci = 0; ci < ROAD_NET.length; ci++) {
       const chain = ROAD_NET[ci];
       for (let pi = 0; pi < chain.length; pi++) {
-        const d = (chain[pi][0] - lat) ** 2 + (chain[pi][1] - lng) ** 2;
-        if (d < bestD) { bestD = d; best = { ci, pi, lat: chain[pi][0], lng: chain[pi][1] }; }
+        const key = Math.floor(chain[pi][0] / NET_CELL) + ',' + Math.floor(chain[pi][1] / NET_CELL);
+        let arr = netGrid.get(key);
+        if (!arr) netGrid.set(key, (arr = []));
+        arr.push({ ci, pi, lat: chain[pi][0], lng: chain[pi][1] });
       }
     }
-    return best;
+  }
+  function nearestNetNode(lat, lng) {
+    if (!netGrid && typeof ROAD_NET !== 'undefined' && ROAD_NET.length) buildNetGrid();
+    if (!netGrid) return null;
+    const gy = Math.floor(lat / NET_CELL), gx = Math.floor(lng / NET_CELL);
+    let best = null, bestD = Infinity;
+    for (const r of [1, 2, 3]) {
+      for (let yy = gy - r; yy <= gy + r; yy++) {
+        for (let xx = gx - r; xx <= gx + r; xx++) {
+          const arr = netGrid.get(yy + ',' + xx);
+          if (!arr) continue;
+          for (const node of arr) {
+            const d = (node.lat - lat) ** 2 + (node.lng - lng) ** 2;
+            if (d < bestD) { bestD = d; best = node; }
+          }
+        }
+      }
+      if (best) return best;   // 由內向外擴，第一圈有就回
+    }
+    return null;
   }
   // 從 (ci,pi) 出發，選與移動方向 (dLat,dLng) 最對齊的相鄰節點；回 { ci, pi } 新位置
   // 選下一段：排名制（選 dot 最大），prev 只在「有其他 dot>0 候選」時才排除——
@@ -466,7 +491,8 @@ const GameMap = (() => {
     const keys = ['up', 'down', 'left', 'right'].filter((d) => Sim.isKeyDown(d));
     if (!keys.length || Sim.isPaused()) {
       S.hero.moving = false;
-      if (heroRaf === null) heroRaf = requestAnimationFrame(heroGlideTick);
+      heroNet = null;   // 停步：路段狀態清掉（下次走重新對齊）
+      heroRaf = requestAnimationFrame(heroGlideTick);
       return;
     }
     // 移動方向：螢幕 up=緯度+（Leaflet y 向下、緯度向上）
@@ -477,70 +503,77 @@ const GameMap = (() => {
     if (keys.includes('left')) dLng -= 1;
     const dl = Math.hypot(dLat, dLng) || 1;
     dLat /= dl; dLng /= dl;
-    const step = (typeof Sim.heroSpeed === 'function' ? Sim.heroSpeed() : 0) * (dt / 1000);   // 度（按實際 dt 補償）
     const p = S.hero.pos;
-    // 不在路網上 → re-snap（載入/傳送後第一次）
-    if (!heroNet) {
-      const node = nearestNetNode(p.lat, p.lng);
-      if (node && Math.hypot(node.lat - p.lat, node.lng - p.lng) < 0.0012) {
-        heroNet = { ci: node.ci, pi: node.pi };
-        p.lat = node.lat; p.lng = node.lng;
-      } else {
-        heroNet = null;
-      }
+
+    // v0.5.4 重設計——道路是幫助不是牢籠：每幀重判模式，輸入永遠優先
+    // ① 離路（dist>OFFROAD_DIST）：自由行走直線＋減速（heroSpeed 已含打折）＋進入頓挫
+    // ② 路上：移動方向與當前路段對齊（dot>0.3）→ 沿段滑（吸附增益）；玩家轉向瞬間（對齊消失）→ 即時脫離自由走
+    const near = nearestNetNode(p.lat, p.lng);
+    const nearDist = near ? Math.hypot(near.lat - p.lat, near.lng - p.lng) : Infinity;
+    const offRoad = nearDist > OFFROAD_DIST;
+    S.hero.offRoad = offRoad;
+
+    const step = (typeof Sim.heroSpeed === 'function' ? Sim.heroSpeed() : 0) * (dt / 1000);
+    // 頓挫：從路上跨進離路的第一拍停一拍（進建築的黏感——v0.4.2 行為回歸）
+    if (offRoad && !heroWasOffRoad) {
+      heroWasOffRoad = true;
+      heroNet = null;
+      heroRaf = requestAnimationFrame(heroGlideTick);
+      return;   // 這一幀不動
     }
-    if (heroNet) {
-      // 沿鏈滑行：朝當前段端點推進，抵達後選下一段
-      const chain = ROAD_NET[heroNet.ci];
-      let remain = step;
-      let guard = 0;
-      while (remain > 0 && guard++ < 8) {
-        const target = chain[heroNet.pi];
-        const dSeg = Math.hypot(target[0] - p.lat, target[1] - p.lng);
-        if (dSeg <= remain) {
-          // 抵達節點 → 選下一段（avoid 排除來時節點——不回頭震盪；v0.5.3 斜向取主軸）
-          p.lat = target[0]; p.lng = target[1];
-          remain -= dSeg;
-          // 斜向輸入（W+D 同按）：正交路網沒有段能同時對齊兩分量——取主軸（較大分量）
-          // 為選段方向，副軸留給下次路口再轉（自然過彎）
-          const pickLat = Math.abs(dLat) >= Math.abs(dLng) ? Math.sign(dLat || 1) : 0;
-          const pickLng = pickLat === 0 ? Math.sign(dLng || 1) : 0;
-          const prevKey = heroNet.prev || null;
-          const nxt = nextNetNode(heroNet.ci, heroNet.pi, pickLat, pickLng, prevKey);
-          if (!nxt) {
-            // 主軸死路 → 副軸再試（路口轉彎）
-            const altLat = pickLat === 0 ? Math.sign(dLat || 1) : 0;
-            const altLng = pickLng === 0 ? Math.sign(dLng || 1) : 0;
-            const alt = (altLat || altLng) ? nextNetNode(heroNet.ci, heroNet.pi, altLat, altLng, prevKey) : null;
-            if (!alt) { heroNet = null; break; }
-            heroNet = { ci: alt.ci, pi: alt.pi, prev: heroNet.ci + ':' + heroNet.pi };
-          } else {
-            heroNet = { ci: nxt.ci, pi: nxt.pi, prev: heroNet.ci + ':' + heroNet.pi };
-          }
-        } else {
-          // 段內推進
-          const len = dSeg || 1e-9;
-          p.lat += (target[0] - p.lat) / len * remain;
-          p.lng += (target[1] - p.lng) / len * remain;
-          remain = 0;
-        }
+    if (!offRoad) heroWasOffRoad = false;
+
+    if (!offRoad && near) {
+      // 路上：吸附增益——當前路段與移動方向對齊（dot>0.3）才沿段滑；對齊消失即時脫離（尊重輸入）
+      if (heroNet) {
+        const seg = ROAD_NET[heroNet.ci];
+        const tgt = seg[heroNet.pi];
+        const segLen = Math.hypot(tgt[0] - p.lat, tgt[1] - p.lng) || 1e-9;
+        const segDot = ((tgt[0] - p.lat) / segLen) * dLat + ((tgt[1] - p.lng) / segLen) * dLng;
+        if (segDot < 0.3) heroNet = null;   // 路段跟輸入脫鉤——放下吸附，即時響應
       }
-      S.hero.moving = true;
+      if (heroNet) {
+        // 沿段滑：朝段端點推進
+        const seg = ROAD_NET[heroNet.ci];
+        const tgt = seg[heroNet.pi];
+        const dSeg = Math.hypot(tgt[0] - p.lat, tgt[1] - p.lng);
+        if (dSeg <= step) {
+          p.lat = tgt[0]; p.lng = tgt[1];
+          const prevKey = heroNet.ci + ':' + heroNet.pi;
+          const nxt = nextNetNode(heroNet.ci, heroNet.pi, dLat, dLng, prevKey);
+          if (nxt && nxt.dot > 0.3) heroNet = { ci: nxt.ci, pi: nxt.pi, prev: prevKey };
+          else heroNet = null;   // 路口沒有順向段——自由走（玩家轉彎）
+        } else {
+          p.lat += (tgt[0] - p.lat) / dSeg * step;
+          p.lng += (tgt[1] - p.lng) / dSeg * step;
+        }
+        S.hero.moving = true;
+      } else {
+        // 路上但無對齊段：直線走（方向即時響應）；貼上路網點且新段順向時重新吸附
+        p.lat += dLat * step; p.lng += dLng * step;
+        const node = nearestNetNode(p.lat, p.lng);
+        if (node && Math.hypot(node.lat - p.lat, node.lng - p.lng) < 0.0004) {
+          const seg = ROAD_NET[node.ci];
+          const fwd = node.pi + 1 < seg.length ? seg[node.pi + 1] : seg[node.pi - 1];
+          const fwdLen = Math.hypot(fwd[0] - node.lat, fwd[1] - node.lng) || 1e-9;
+          const fwdDot = ((fwd[0] - node.lat) / fwdLen) * dLat + ((fwd[1] - node.lng) / fwdLen) * dLng;
+          if (fwdDot > 0.3) { heroNet = { ci: node.ci, pi: node.pi + 1 < seg.length ? node.pi + 1 : node.pi - 1 }; p.lat = node.lat; p.lng = node.lng; }
+        }
+        S.hero.moving = true;
+      }
     } else {
-      // 自由行走（離路）：直線推進；靠近路網點即鎖回
+      // 離路：自由行走直線（黏感來自減速與頓挫，不鎖方向）；走回路上自動回吸附模式
       p.lat += dLat * step; p.lng += dLng * step;
-      const node = nearestNetNode(p.lat, p.lng);
-      if (node && Math.hypot(node.lat - p.lat, node.lng - p.lng) < 0.0004) { heroNet = { ci: node.ci, pi: node.pi }; p.lat = node.lat; p.lng = node.lng; }
       S.hero.moving = true;
     }
     S.hero.stopping = false;
-    // 每幀直接推 marker（rAF 60fps 連續——不再靠 CSS transition 補間，pane 位移也打不斷）
+    // 每幀直接推 marker（rAF 60fps 連續）
     if (heroMarker) {
       const el = heroMarker.getElement();
-      if (el) el.style.transition = 'none';   // 每幀 setLatLng，transition 關掉（位置本身就是連續的）
+      if (el) el.style.transition = 'none';
       heroMarker.setLatLng([p.lat, p.lng]);
     }
-    heroRaf = requestAnimationFrame(heroGlideTick);   // 自持迴圈
+    heroRaf = requestAnimationFrame(heroGlideTick);
   }
 
   function renderHero() {
@@ -781,5 +814,5 @@ const GameMap = (() => {
     rafFollow = requestAnimationFrame(step);
   }
 
-  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, immersionTick, cb };
+  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, immersionTick, heroGlideTick, cb };
 })();

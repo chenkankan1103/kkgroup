@@ -533,10 +533,9 @@ const Sim = (() => {
   function setKey(dir, on) { keys[dir] = !!on; }
   function isKeyDown(dir) { return !!keys[dir]; }   // v0.3.2：急停判定用（keyup 當下 moving 旗標還沒翻）
   let heroCheckCd = 0;  // 盤查冷卻（gameMin），避免貼著警車連續彈卡
-  const OFFROAD_DIST = 0.0012;   // 離最近街道點超過此距離（~130m）＝離路（路網點間距大，走在兩點間的路段上不可誤判）
-  const OFFROAD_SLOW = 0.45;     // 離路減速係數（v0.3.2：0.35→0.45——QA 實測極深處 247.9m/1.6s 低於路上均速一半，太黏；對比感靠頓挫＋投影吸附維持）
   let heroStall = false;         // 移動中跨進離路的第一步頓挫旗標
   let heroWasOffRoad = false;    // 上一 tick 的離路狀態（頓挫邊緣判定用）
+  // v0.5.4：OFFROAD_DIST/OFFROAD_SLOW 移到 data.js（map.js heroGlideTick 共用）
 
   // ===== v0.4.0 甲：曝光度（heat）——看不見數值、看得見後果 =====
   // 每遊戲分鐘結算：街上累積、巡查車視線內加速、紅圈內加速；總部/綠圈降溫。
@@ -675,10 +674,8 @@ const Sim = (() => {
   function heroTick() {
     if (!S || !S.hero) return;
     // v0.5.3 主角路網滑行：位移移交 map.js 的 rAF（每幀沿 ROAD_NET 鏈推進）——
-    // sim 這裡只做判定：offRoad 狀態、heat 結算、查崗碰撞（照舊吃 S.hero.pos，每幀更新的連續值）
-    const here = nearestRoad(S.hero.pos.lat, S.hero.pos.lng);
-    S.hero.offRoad = !!(here && here.dist > OFFROAD_DIST);
-    heroWasOffRoad = S.hero.offRoad;
+    // sim 這裡只做判定：heat 結算、查崗碰撞（照舊吃 S.hero.pos，每幀更新的連續值）
+    // v0.5.4：offRoad/heroWasOffRoad 由 map.js 的 heroGlideTick 擁有（頓挫邊緣判定在渲染層，sim 每秒覆寫會打斷）
     heatTick();
     // 巡查車互動：靠近才「有機率」被攔下問話（冷卻 30 遊戲分鐘；不是每次靠近都攔）
     if (!paused && !S.ended && gameMin() >= heroCheckCd) {
