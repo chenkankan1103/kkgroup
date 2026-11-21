@@ -609,17 +609,28 @@ const GameMap = (() => {
     // 拖動地圖＝暫停跟隨（點主角鍵會再啟動）
     map.on('dragstart', () => { followHero = false; });
   }
-  let heroFollowTick = 0;
+  // v0.5.2 鏡頭跟隨平滑化：每秒一次 panTo(硬跳) 會把 marker pane 整個位移——
+  // 主角 marker 的 CSS transition 被大跳打斷（使用者實測「地圖一頓一頓＋一次噴一大格」）。
+  // 改 rAF 連續跟隨：每幀鏡頭往主角方向推 8%，鏡頭與 marker 都連續
+  let rafFollow = null;
   function followTick() {
-    if (!map || !followHero) return;
-    const S = Sim.state();
-    if (!S || !S.hero) return;
-    const h = S.hero.pos;
-    const c = map.getCenter();
-    if (Math.abs(h.lat - c.lat) > 0.0004 || Math.abs(h.lng - c.lng) > 0.0004) {
-      // V3.7：animate:false 硬跟——主角 marker 已有 1s CSS 補間，鏡頭再緩動會互相追趕微抖
-      map.panTo([h.lat, h.lng], { animate: false });
+    if (!map || !followHero) {
+      if (rafFollow) { cancelAnimationFrame(rafFollow); rafFollow = null; }
+      return;
     }
+    if (rafFollow) return;   // 已有 rAF 迴圈在跑
+    const step = () => {
+      const S = Sim.state();
+      if (!map || !followHero || !S || !S.hero) { rafFollow = null; return; }
+      const h = S.hero.pos;
+      const c = map.getCenter();
+      const dLat = h.lat - c.lat, dLng = h.lng - c.lng;
+      if (Math.abs(dLat) > 0.0001 || Math.abs(dLng) > 0.0001) {
+        map.setView([c.lat + dLat * 0.08, c.lng + dLng * 0.08], map.getZoom(), { animate: false });
+      }
+      rafFollow = requestAnimationFrame(step);
+    };
+    rafFollow = requestAnimationFrame(step);
   }
 
   return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, immersionTick, cb };
