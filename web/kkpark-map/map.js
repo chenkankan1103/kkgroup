@@ -567,11 +567,15 @@ const GameMap = (() => {
       S.hero.moving = true;
     }
     S.hero.stopping = false;
-    // 每幀直接推 marker（rAF 60fps 連續）
+    // 每幀直接推 marker（rAF 60fps 連續）＋離路變暗提示（v0.5.4 修：toggle 從 renderHero 移來——
+    // renderHero 每秒一次會被 heroGlideTick 的每幀節奏吃掉，QA 取樣 False 的根因）
     if (heroMarker) {
       const el = heroMarker.getElement();
-      if (el) el.style.transition = 'none';
-      heroMarker.setLatLng([p.lat, p.lng]);
+      if (el) {
+        el.style.transition = 'none';
+        el.classList.toggle('hero-offroad', offRoad);
+        heroMarker.setLatLng([p.lat, p.lng]);
+      }
     }
     heroRaf = requestAnimationFrame(heroGlideTick);
   }
@@ -612,11 +616,13 @@ const GameMap = (() => {
       const img = el && el.querySelector('.mk-doll');
       if (img) Avatar.heroIconUrl(wantPose, (url) => { if (url && img.isConnected) img.src = url; });
     }
-    // V3.7 離路減速的視覺提示：主角輕微變暗（offRoad 狀態切 class）
-    const hel = heroMarker.getElement();
+    // V3.7.1 停步補間：鬆鍵急停 0.4s（走路維持 1s）；再走動由 sim 清 stopping
+    const hel = heroMarker && heroMarker.getElement();
     if (hel) {
-      hel.classList.toggle('hero-offroad', !!S.hero.offRoad);
-      // V3.7.1 停步補間：鬆鍵急停 0.4s（走路維持 1s）；再走動由 sim 清 stopping
+      // v0.5.4：hero-offroad 兩處都 toggle——heroGlideTick 每幀（前台即時）＋這裡每秒（後台/headless 後備，就地判定不依賴 rAF 寫入的旗標）
+      const nr = (typeof nearestNetNode === 'function') ? nearestNetNode(pos.lat, pos.lng) : null;
+      const offNow = !nr || Math.hypot(nr.lat - pos.lat, nr.lng - pos.lng) > OFFROAD_DIST;
+      hel.classList.toggle('hero-offroad', offNow);
       hel.classList.toggle('hero-stopping', !!S.hero.stopping && !S.hero.moving);
     }
   }
