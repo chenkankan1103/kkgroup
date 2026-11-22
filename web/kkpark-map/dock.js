@@ -422,7 +422,7 @@ const Hotline = (() => {
       let text;
       if (r.ok) {
         text = `熱線單完成 +$${r100(r.pay).toLocaleString()}` +
-          (r.stake ? `（押注 ${r.mult ? '×' + r.mult : ''}）` : '（平盤）');
+          (r.mult ? `（押注 ×${r.mult}）` : r.stake ? '（押注）' : '（平盤）');
       } else if (r.mercy) {
         text = `熱線單超時——對方念你有誠意，退一半 $${r100(r.mercy).toLocaleString()}`;
       } else {
