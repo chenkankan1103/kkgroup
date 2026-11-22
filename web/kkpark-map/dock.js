@@ -353,7 +353,7 @@ const Hotline = (() => {
     $('hlStakes').innerHTML = stakes.map((s) => {
       const need = r100(o.pay * s.pct / 100);
       const off = need > S.money;
-      return `<button class="stake-btn ${s.pct === 50 ? 'bold' : ''}" data-pct="${s.pct}"${off ? ' disabled' : ''}>
+      return `<button class="stake-btn ${s.pct === 50 ? 'bold' : ''}" data-pct="${s.pct}"${off ? ' disabled' : ''}${off ? ' title="帳上不夠押"' : ''}>
         ${s.name} ${s.mult}<small>${s.pct === 0 ? s.sub : `${s.sub} · 帳上 ${fmt(S.money)}`}</small></button>`;
     }).join('');
     $('hlStakes').querySelectorAll('[data-pct]').forEach((b) => {
@@ -442,6 +442,21 @@ const Hotline = (() => {
     },
   };
 
+  // 押注檔位即時 disable（spec §2「按現有 S.money 即時 disable」）——卡開著錢變動也要灰
+  function tickStake() {
+    const modal = $('hotlineModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    const o = HAPI.offer();
+    const S = Sim.state();
+    if (!o || !S) return;
+    $('hlStakes').querySelectorAll('[data-pct]').forEach((b) => {
+      const need = r100(o.pay * Number(b.dataset.pct) / 100);
+      const off = need > S.money;
+      b.disabled = off;
+      if (off) b.title = '帳上不夠押';
+    });
+  }
+
   function init() {
     // 事件總線（寫手 A 落地後 emit 即生效；鍵值先佔同 spec §6）
     Sim.on('hotlineSignal', HANDLERS.signal);
@@ -462,6 +477,7 @@ const Hotline = (() => {
   function tick() {
     HL_MOCK.tick();
     tickChip();
+    tickStake();
   }
 
   return { init, enterGame, tick, openCard };
