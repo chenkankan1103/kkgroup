@@ -268,6 +268,20 @@ class UserPanel(commands.Cog):
         except Exception:
             pass
 
+    def _member_can_view_forum(self, forum_channel: discord.ForumChannel, user_id: int) -> bool:
+        """檢查用戶目前能否查看置物櫃論壇。
+
+        WHY：Discord 規定目標用戶必須能查看頻道才能被加入 public thread
+        （否則 thread.add_user 回 403 50001 Missing Access）。置物櫃論壇對
+        @everyone deny VIEW_CHANNEL、只允許正式會員身分組，因此未升級的
+        新成員（如只有「迷途羔羊」）必然失敗；先檢查可避免無效 API 呼叫
+        與誤導性錯誤日誌。查不到成員快取時不攔截，交由原 try/except 處理。
+        """
+        member = forum_channel.guild.get_member(user_id)
+        if member is None:
+            return True
+        return forum_channel.permissions_for(member).view_channel
+
     async def get_or_create_user_thread(
         self, user: discord.User, skip_image_on_startup: bool = False
     ) -> Optional[discord.Thread]:
@@ -322,11 +336,17 @@ class UserPanel(commands.Cog):
                     content="👋 這是你的專屬置物櫃～",
                 )
                 await async_set_user_field(user.id, "locker_message_id", message.id)
-                try:
-                    await thread.add_user(user)
-                    print(f"✅ 用戶 {user.id} 已添加到線程 {thread.id}")
-                except Exception as e:
-                    print(f"⚠️ 將用戶加入線程失敗 {user.id}: {e}")
+                if self._member_can_view_forum(forum_channel, user.id):
+                    try:
+                        await thread.add_user(user)
+                        print(f"✅ 用戶 {user.id} 已添加到線程 {thread.id}")
+                    except Exception as e:
+                        print(f"⚠️ 將用戶加入線程失敗 {user.id}: {e}")
+                else:
+                    print(
+                        f"ℹ️ 用戶 {user.id} 尚無置物櫃論壇查看權（未取得正式會員身分組），"
+                        f"線程 {thread.id} 已建立，待取得身分組後由系統自動補加"
+                    )
             except discord.HTTPException as http_e:
                 if http_e.status == 400:
                     simple_embed = discord.Embed(
