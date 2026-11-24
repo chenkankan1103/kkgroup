@@ -33,6 +33,7 @@ const UI = (() => {
     if (gv && typeof GAME_VERSION !== 'undefined') gv.textContent = GAME_VERSION;
     GameMap.init();
     Dock.init();  // v0.5.0 前哨：下方固定升級面板
+    Hotline.init();  // v0.6：熱線單 UI（chip／接單卡／路線／juice）
     // V3.4：OAuth 回跳（?auth_token=…）→ 驗 token 存 my → 直接進遊戲（有存檔續玩、沒有開新局）
     Avatar.handleOAuthReturn().then((uid) => {
       if (!uid) return;
@@ -103,6 +104,7 @@ const UI = (() => {
     $('hud').classList.remove('hidden');
     $('roster').classList.remove('hidden');
     $('dock').classList.remove('hidden');  // v0.5.0 前哨：進場就亮出下方升級欄
+    Hotline.enterGame();  // v0.6：熱線 mock 開始響（真 API 落地後改由 Sim 驅動）
     renderAll();
     // 關頁時正好在攻堅決策 → 進場重彈策略卡（sim.load 已恢復暫停）
     const S0 = Sim.state();
@@ -188,6 +190,8 @@ const UI = (() => {
     tickBuildProgress();
     tickRoster();
     Dock.tick();  // v0.5.0 前哨：摘要條更新＋錢變動跳動
+    Hotline.tick();  // v0.6：熱線 chip 倒數＋mock 時鐘
+    GameMap.hotlineProgress();  // v0.6：路線走過/未走切分
   }
 
   // 工地進度：只改百分比文字，不重建商店按鈕（避免點擊被吃掉）

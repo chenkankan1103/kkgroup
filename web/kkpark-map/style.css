@@ -7,6 +7,7 @@
   --line: #2a3348;
   --txt: #e8f0ff;
   --dim: #8b97b0;
+  --faint: #5a6580;   /* art-bible §2：三級／腳註 */
   --cyan: #7df9ff;
   --pink: #ff5ec4;
   --gold: #ffe14d;
@@ -561,4 +562,82 @@ body.immersed #dock > * { pointer-events: none; }
 
 @media (max-width: 720px) {
   #dock { left: 0; right: 0; bottom: calc(34vh + 8px); }
+}
+
+/* ===== v0.6 熱線單（hotline-spec §6）——信號 chip／接單卡／路線／追擊 juice ===== */
+/* art-bible §3：金額與時間走 Cubic 11 像素數字（正文不換） */
+.hud-chip, #dockSummary, .hl-money, .hl-time {
+  font-family: "Cubic 11", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+/* 熱線信號 chip 三態：架上（金脈動＝可點接單）／進行中（青色倒數）／<30s（紅脈動） */
+.hotline-chip { cursor: pointer; }
+.hotline-chip.offer {
+  color: var(--gold); border-color: rgba(255, 225, 77, 0.6);
+  animation: hotPulse 1.6s ease-in-out infinite;   /* 光源：儀器指示燈（有單可接） */
+}
+.hotline-chip.active { color: var(--cyan); border-color: var(--cyan); }
+.hotline-chip.low { color: var(--red); border-color: var(--red); animation: foodBlink 0.9s ease-in-out infinite; }
+/* rush 全程大字（spec §4） */
+.hotline-chip.rush { font-size: 17px; padding: 6px 14px; }
+/* 放棄確認條：貼 HUD 下方 */
+#hotlineQuit {
+  position: fixed; top: 44px; left: 12px; z-index: 1001;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(18, 23, 34, 0.97); border: 1px solid var(--red);
+  border-radius: 9px; padding: 7px 10px; font-size: 12.5px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
+/* 接單卡：押注三檔 */
+.hl-stake-title { font-size: 12.5px; color: var(--dim); margin-bottom: 8px; }
+.hl-stakes { display: flex; flex-direction: column; gap: 8px; }
+.stake-btn {
+  font-family: inherit; font-size: 14px; cursor: pointer; text-align: left;
+  background: var(--panel2); color: var(--txt);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+}
+.stake-btn small { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; }
+.stake-btn:hover:not(:disabled) { border-color: var(--gold); }
+.stake-btn.bold { border-color: rgba(255, 225, 77, 0.55); }
+.stake-btn.bold small { color: var(--gold); }
+.stake-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 路線 polyline：未走段虛線青（霓虹＝進行中，光源是儀表），走過段實線暗灰 */
+.hotline-route {
+  stroke: var(--cyan); stroke-dasharray: 7 9; stroke-opacity: 0.85;
+  filter: drop-shadow(0 0 3px rgba(125, 249, 255, 0.6));
+}
+.hotline-walked {
+  stroke: var(--faint); stroke-opacity: 0.5; stroke-width: 3;
+}
+/* 路線 pill marker（取件/交付）——跟 mk-poi 同語言 */
+.mk-hl {
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(18, 23, 34, 0.92); border: 1px solid var(--gold);
+  border-radius: 12px; padding: 2px 9px; font-size: 14px; white-space: nowrap;
+  box-shadow: 0 0 10px rgba(255, 225, 77, 0.4);
+}
+.mk-hl span { font-size: 11px; color: var(--gold); font-weight: 700; }
+.mk-hl.drop { border-color: var(--cyan); }
+.mk-hl.drop span { color: var(--cyan); }
+/* 追擊 juice（art-bible §5）：震動小檔（縱向微顫 0.12s）＋中檔（縱橫 3px 0.35s）＋紅暈脈衝 */
+@keyframes shakeSm {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-2px); } 60% { transform: translateY(1px); }
+}
+@keyframes shakeMd {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-3px, -3px); } 45% { transform: translate(3px, 1px); }
+  70% { transform: translate(-2px, 2px); }
+}
+body.shake-sm #hud { animation: shakeSm 0.12s ease-out 1; }
+body.shake-md #hud { animation: shakeMd 0.35s ease-out 1; }
+/* 紅暈脈衝：暫時疊高 #heat-vignette 的不透明度（與 --heat-glow 取 max 的視覺語意） */
+#heat-vignette.chase { animation: chaseVignette 0.9s ease-out 1; }
+@keyframes chaseVignette {
+  0% { opacity: 0.15; } 30% { opacity: 0.85; } 100% { opacity: var(--heat-glow, 0); }
+}
+/* 結算 toast 的熱線變體：押注明細獨立一行 */
+.toast.hl-detail { border-left-color: var(--gold); white-space: normal; max-width: 84vw; }
+
+@media (max-width: 720px) {
+  #hotlineQuit { left: 8px; right: 8px; }
 }

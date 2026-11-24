@@ -209,6 +209,36 @@ const FOOD_PACK = { price: 3000, amount: 10 }; // 商店買伙食
 const FOOD_MAX = 99;
 const MEMBER_CAP_BASE = 6;  // 基礎成員上限（工寮 +3）
 
+// ===== v0.6.0 熱線單（親送制高倍率限時任務）——規格 hotline-spec.md §1-8 =====
+const HOTLINE_BASE_B = 11500;   // 基準單位 B＝普通單均值（經濟收緊後 $11,000-12,000）
+const HOTLINE_CARDS = [
+  { id: 'flash',   title: '閃電快遞', blurb: '小東西，現在就要，你離得最近', unlock: null,                    stakePct: 0,    archMult: 2.5, limitSec: 150, route: { minKm: 0.8, maxKm: 1.2, crossPolice: 0 }, hook: null, weight: 3 },
+  { id: 'pickup',  title: '跨區代收', blurb: '錢在別人手上，你去把它變成你的', unlock: null,                    stakePct: 0.05, archMult: 3.0, limitSec: 180, route: { minKm: 1.0, maxKm: 1.5, crossPolice: 1 }, hook: 'watchpoint', weight: 3 },
+  { id: 'nightcar',title: '夜車',     blurb: '這個點才有的生意，車少，眼也少', unlock: 'night',                 stakePct: 0.08, archMult: 4.0, limitSec: 240, route: { minKm: 1.5, maxKm: 2.0, crossPolice: 0 }, hook: 'nightdiscount', weight: 1.5 },
+  { id: 'rush',    title: '加急件',   blurb: '十分鐘後就沒價值了，跑', unlock: { maxHeat: 40 },          stakePct: 0.15, archMult: 3.5, limitSec: 120, route: { minKm: 1.0, maxKm: 1.5, crossPolice: 1 }, hook: 'rush', weight: 2 },
+  { id: 'twostep', title: '雙程貨',   blurb: '先拿 A，到了再說 B 在哪', unlock: null,                    stakePct: 0.10, archMult: 3.2, limitSec: 240, route: { minKm: 1.2, maxKm: 1.6, crossPolice: 0 }, hook: 'twostep', weight: 2 },
+  { id: 'bighead', title: '頭款',     blurb: '對方只信現金，你敢押多少，他敢給多少', unlock: { minTrust: 40 },  stakePct: 0.25, archMult: 4.5, limitSec: 210, route: { minKm: 1.5, maxKm: 2.0, crossPolice: 2 }, hook: 'guaranteedcheck', weight: 1.5 },
+  { id: 'cleanup', title: '清尾款',   blurb: '最後一段，走完就乾淨了', unlock: { act2: true },          stakePct: 0.30, archMult: 5.0, limitSec: 300, route: { minKm: 1.5, maxKm: 2.0, crossPolice: 2, deepPolice: 0.003 }, hook: 'heatx2', weight: 2 },
+];
+const HOTLINE = {
+  SPAWN_COOLDOWN: [8, 15],   // 冷卻（遊戲分）隨機
+  TIME_BUFFER: 1.6,          // 限時 = pathLen / heroSpeed × 1.6（rush ×0.8）
+  STAKE_TIERS: [0, 0.25, 0.5],
+  STAKE_MULT: [1.0, 1.35, 1.75],
+  NEAR_MISS_PCT: 0.10,       // 超時在限時 10% 內 → 退 50% 押金
+  ABANDON_PENALTY: 0.5,      // 主動放棄：押金沒收 50%
+  HEAT_PER_CARD: { flash: 10, pickup: 14, nightcar: 18, rush: 16, twostep: 15, bighead: 20, escort: 13, cleanup: 22 },
+  COP_INTERCEPT_R: 0.0008,   // 攔截觸發 90m
+  COP_INTERCEPT_R_NIGHT: 0.00065,  // 夜間 72m（8 折）
+  COP_ARREST_R: 0.00032,     // 進入 35m → 查崗
+  COP_CHASE_SPEED: 1.15,     // 追擊速度 1.15×
+  COP_ESCAPE_R: 0.0011,      // 拉開 120m 脫離
+  COP_MAX_MINS: 3,           // 攔截至多 3 遊戲分
+  CHASE_MAX_MINS: 5,         // 追擊至多 5 遊戲分
+  ESCAPE_HOLD_MINS: 2,       // 拉開持續 2 遊戲分 → 脫離
+  DECOY_PRICE: 8000,         // （既有）壓熱
+};
+
 // ===== V1.5：園區建設（蓋好永久生效；buildMin 為遊戲分鐘 = 真實秒）=====
 const BUILDINGS = [
   { id: 'tank', icon: '🌊', name: '水塔', price: 18000, buildMin: 90, desc: '每天清晨 +4 伙食' },

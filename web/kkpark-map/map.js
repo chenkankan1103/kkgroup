@@ -3,7 +3,7 @@
 
 const GameMap = (() => {
   let map = null;
-  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, mAct2, mPoi;
+  let mMissions, mJobs, mPolice, mHQ, mBuild, mRaid, mTurf, mAct2, mPoi, mHl;
   const cb = {}; // 對外回呼：missionClick
   const jobMarkers = {}; // memId -> marker（出勤；不重建，才能用 CSS transition 平滑走路）
   const homeMarkers = {}; // memId -> marker（待命站總部周圍）
@@ -44,6 +44,7 @@ const GameMap = (() => {
     mTurf = L.layerGroup().addTo(map);
     mAct2 = L.layerGroup().addTo(map);
     mPoi = L.layerGroup().addTo(map);
+    mHl = L.layerGroup().addTo(map);
 
     L.marker([HQ.lat, HQ.lng], {
       icon: divIcon('<div class="mk-hq">🏢<span>園區總部</span></div>', [76, 26]),
@@ -820,5 +821,58 @@ const GameMap = (() => {
     rafFollow = requestAnimationFrame(step);
   }
 
-  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, immersionTick, heroGlideTick, cb };
+  // ===== v0.6 熱線單：路線高亮 polyline＋取件/交付 pill（hotline-spec §3/§6） =====
+  // 未走段＝虛線青（霓虹，光源＝儀表進行中）；已走過＝實線暗灰變淡。每秒找主角最近的
+  // 路線節點切分走過/未走，索引不變不重畫。
+  let hlLineRem = null, hlLineWalk = null, hlPillUp = null, hlPillDrop = null, hlWalkIdx = -1;
+  function renderHotline(route) {
+    if (!map) return;
+    clearHotline();
+    hlWalkIdx = -1;
+    if (!route || !route.nodes || !route.nodes.length) return;
+    hlLineRem = L.polyline(route.nodes, { className: 'hotline-route', interactive: false, weight: 3 }).addTo(mHl);
+    const up = route.pickup, dp = route.drop;
+    if (up) {
+      hlPillUp = L.marker([up.lat, up.lng], {
+        icon: divIcon('<div class="mk-hl">📦<span>取件</span></div>', [58, 24]), zIndexOffset: 500,
+      }).addTo(mHl);
+    }
+    if (dp) {
+      hlPillDrop = L.marker([dp.lat, dp.lng], {
+        icon: divIcon('<div class="mk-hl drop">🏁<span>交付</span></div>', [58, 24]), zIndexOffset: 500,
+      }).addTo(mHl);
+    }
+  }
+  function clearHotline() {
+    [hlLineRem, hlLineWalk, hlPillUp, hlPillDrop].forEach((l) => { if (l) { try { mHl.removeLayer(l); } catch (e) {} } });
+    hlLineRem = hlLineWalk = hlPillUp = hlPillDrop = null;
+    hlWalkIdx = -1;
+  }
+  function hotlineProgress() {
+    if (!map || !hlLineRem) return;
+    const S = Sim.state();
+    if (!S || !S.hero) return;
+    const nodes = hlLineRem.getLatLngs();
+    const h = S.hero.pos;
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < nodes.length; i++) {
+      const d = Math.hypot(nodes[i].lat - h.lat, nodes[i].lng - h.lng);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (best === hlWalkIdx) return;
+    hlWalkIdx = best;
+    // 重切分：走過＝實線暗灰、未走＝虛線青
+    const walked = nodes.slice(0, best + 1);
+    const rest = nodes.slice(best);
+    if (hlLineWalk) { try { mHl.removeLayer(hlLineWalk); } catch (e) {} }
+    hlLineWalk = walked.length > 1
+      ? L.polyline(walked, { className: 'hotline-walked', interactive: false }).addTo(mHl)
+      : null;
+    try { mHl.removeLayer(hlLineRem); } catch (e) {}
+    hlLineRem = rest.length > 1
+      ? L.polyline(rest, { className: 'hotline-route', interactive: false, weight: 3 }).addTo(mHl)
+      : null;
+  }
+
+  return { init, refreshPolice, tickCops, renderTurf, renderAct2, renderMissions, renderJobs, renderBuildings, raidAssembly, clearRaid, flyTo, getCenter, copPositions, bindKeys, followTick, renderHero, renderPois, updatePoiButtons, immersionTick, heroGlideTick, renderHotline, clearHotline, hotlineProgress, cb };
 })();

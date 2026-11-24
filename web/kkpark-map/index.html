@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>KK 園區：雙面線人</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<!-- art-bible §3：數字／金額／時間戳走 Cubic 11 像素字體（正文不換，可讀性優先） -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cubic+11&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,6 +20,8 @@
     <div id="hudFood" class="hud-chip">🍚 25</div>
     <div id="hudClock" class="hud-chip">第 1 天 09:00</div>
     <div class="hud-chip">🗺️ 任務 <b id="misCount">0</b></div>
+    <!-- v0.6 熱線信號 chip：有單＝金脈動（點開接單卡）；進行中＝倒數（<30s 轉紅脈動，rush 大字） -->
+    <div id="hudHotline" class="hud-chip hotline-chip hidden">📡 熱線</div>
     <div id="hudRaid" class="hud-chip hidden">🚨 風聲緊——今晚可能有突擊</div>
     <div id="hudBury" class="hud-chip hidden" title="把一半現金藏進地板，天亮取回（磨損一成）">🪙 藏一半現金</div>
     <div id="hudTribute" class="hud-chip hidden">🏹 貢金</div>
@@ -71,6 +75,25 @@
       <button id="hcBadge" class="ev-btn">🪪 亮出線人身分（風聲+3、組織信任-2）</button>
     </div>
   </div>
+</div>
+
+<!-- v0.6 熱線接單卡（沿用事件卡 modal 樣式）：標題/描述/賞金/限時/路線摘要＋押注三檔 -->
+<div id="hotlineModal" class="overlay hidden">
+  <div class="modal event">
+    <div class="ev-icon">📡</div>
+    <h3 id="hlTitle"></h3>
+    <p id="hlDesc"></p>
+    <div id="hlRows" class="raid-intel"></div>
+    <div class="hl-stake-title">押多少？（押金接單當下扣除，失敗全沒收）</div>
+    <div id="hlStakes" class="hl-stakes"></div>
+  </div>
+</div>
+
+<!-- v0.6 熱線放棄確認：點進行中 chip 浮出 -->
+<div id="hotlineQuit" class="hidden">
+  <span>放棄這張單？押金沒收一半。</span>
+  <button id="btnHlQuitYes" class="mini">🚪 放棄</button>
+  <button id="btnHlQuitNo" class="mini">繼續跑</button>
 </div>
 
 <!-- V2 警方攻堅：策略決策＋戰報（同一張卡兩種內容） -->

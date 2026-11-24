@@ -46,6 +46,7 @@ const Sim = (() => {
       jobs: {}, nextGen: 0, ended: null,
       buried: 0, buriedRefund: 0, raidCount: 0, bribeCount: 0,  // V2.5
       act2: false, evidence: 0, hqRaidFail: 0, cells: null,     // V3.0 第二幕
+      hotline: { offer: null, active: null, nextSpawnMin: 10, stats: { done: 0, failed: 0, streak: 0 } },  // v0.6.0 熱線單
       hero: (() => {   // V3.7：出生點直接吸附到總部西南側最近街道（newGame 時 roadGrid 尚未建，nearestRoad 會自建）
         const p0 = { lat: HQ.lat + 0.0012, lng: HQ.lng - 0.0009 };
         const snap = nearestRoad(p0.lat, p0.lng);
@@ -598,6 +599,314 @@ const Sim = (() => {
   // 效果鉤子統一入口（其他系統呼叫）：
   const upEff = (id) => { const n = upgradeNode(id); return n ? n.eff(upgradeLevel(id)) : 1; };
 
+  // ===== v0.6.0 熱線單（親送制高倍率限時任務）——規格 hotline-spec.md =====
+  // 狀態機：offer（架上）→ active（進行中，押金 escrow）→ 結算。同時最多 1 架上 1 進行。
+  // 位移由主角路網滑行（map.js heroGlideTick）承載——熱線單只管「取件→交付」的到站判定與押注結算。
+  const HUNDRED = (x) => Math.round(x / 100) * 100;   // 使用者裁定：所有熱線金額百位取整
+
+  function hotlineEligible(card) {
+    const hourNow = hour();
+    if (card.unlock === 'night') return hourNow >= 22 || hourNow < 4;
+    if (card.unlock && card.unlock.maxHeat !== undefined && (S.heat || 0) >= card.unlock.maxHeat) return false;   // rush：heat≥40 退出抽選
+    if (card.unlock && card.unlock.minTrust !== undefined && S.trust < card.unlock.minTrust) return false;
+    if (card.unlock && card.unlock.act2 && !S.act2) return false;
+    if (card.id === 'cleanup' && !S.act2) return false;
+    return true;
+  }
+
+  // 路線生成：取件點（主角附近路網）→ 目的點（POI ∪ 路網錨點池，過濾距離帶），沿鏈貪婪推進輸出節點鏈
+  const NODE_CELL = 0.004;
+  let nodeGrid = null;
+  function nearestNetNode(lat, lng) {   // sim 版：回 { ci, pi, lat, lng }（熱線路線生成用）
+    if (!nodeGrid) {
+      nodeGrid = new Map();
+      for (let ci = 0; ci < ROAD_NET.length; ci++) {
+        const chain = ROAD_NET[ci];
+        for (let pi = 0; pi < chain.length; pi++) {
+          const key = Math.floor(chain[pi][0] / NODE_CELL) + ',' + Math.floor(chain[pi][1] / NODE_CELL);
+          let arr = nodeGrid.get(key);
+          if (!arr) nodeGrid.set(key, (arr = []));
+          arr.push({ ci, pi, lat: chain[pi][0], lng: chain[pi][1] });
+        }
+      }
+    }
+    const gy = Math.floor(lat / NODE_CELL), gx = Math.floor(lng / NODE_CELL);
+    let best = null, bestD = Infinity;
+    for (const r of [1, 2, 3]) {
+      for (let yy = gy - r; yy <= gy + r; yy++) {
+        for (let xx = gx - r; xx <= gx + r; xx++) {
+          const arr = nodeGrid.get(yy + ',' + xx);
+          if (!arr) continue;
+          for (const node of arr) {
+            const d = (node.lat - lat) ** 2 + (node.lng - lng) ** 2;
+            if (d < bestD) { bestD = d; best = node; }
+          }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+  // sim 版 nextNetNode（路線生成貪婪推進用——與 map.js 的行為層版本同構，但含跨鏈端點接續）
+  function simNextNetNode(ci, pi, dLat, dLng) {
+    const cands = [];
+    for (const [dci, dpi] of [[ci, pi - 1], [ci, pi + 1]]) {
+      if (dpi < 0 || dpi >= ROAD_NET[dci].length) continue;
+      const p = ROAD_NET[dci][dpi];
+      const len = Math.hypot(p[0] - ROAD_NET[ci][pi][0], p[1] - ROAD_NET[ci][pi][1]) || 1e-9;
+      const dot = ((p[0] - ROAD_NET[ci][pi][0]) / len) * dLat + ((p[1] - ROAD_NET[ci][pi][1]) / len) * dLng;
+      cands.push({ ci: dci, pi: dpi, dot });
+    }
+    const atEnd = pi - 1 < 0 || pi + 1 >= ROAD_NET[ci].length;
+    if (atEnd) {
+      const here = ROAD_NET[ci][pi];
+      for (let cj = 0; cj < ROAD_NET.length; cj++) {
+        if (cj === ci) continue;
+        let bestJ = null, bestD = 0.002;
+        for (let pj = 0; pj < ROAD_NET[cj].length; pj++) {
+          const q = ROAD_NET[cj][pj];
+          const d = Math.hypot(q[0] - here[0], q[1] - here[1]);
+          if (d < bestD) { bestD = d; bestJ = pj; }
+        }
+        if (bestJ !== null) {
+          const q = ROAD_NET[cj][bestJ];
+          const len = bestD || 1e-9;
+          const dot = ((q[0] - here[0]) / len) * dLat + ((q[1] - here[1]) / len) * dLng;
+          cands.push({ ci: cj, pi: bestJ, dot });
+        }
+      }
+    }
+    const fwd = cands.filter((c) => c.dot > 0);
+    if (fwd.length) return fwd.sort((a, b) => b.dot - a.dot)[0];
+    return cands.length ? cands.sort((a, b) => b.dot - a.dot)[0] : null;
+  }
+  function genHotlineRoute(card) {
+    const startNode = nearestNetNode(S.hero.pos.lat, S.hero.pos.lng);
+    // 目的候選：POI 座標 ＋ 總部周邊決定性錨點（每 0.01° 一個格心）
+    const dests = [];
+    if (typeof POI_DEFS !== 'undefined') for (const d of POI_DEFS) dests.push({ lat: d.lat, lng: d.lng });
+    for (let i = 0; i < 24; i++) {
+      dests.push({ lat: TW.latR[0] + (TW.latR[1] - TW.latR[0]) * (i / 24), lng: HQ.lng + ((i % 2) ? 1 : -1) * 0.02 * (1 + (i % 5)) });
+    }
+    // 過濾：距離帶（km）
+    const km = (a, b) => Math.hypot(a.lat - b.lat, a.lng - b.lng) * 111;
+    const c2 = dests.filter((d) => {
+      const distKm = km(S.hero.pos, d);
+      return distKm >= card.route.minKm && distKm <= card.route.maxKm;
+    });
+    let dest = c2.length ? c2[(Math.random() * c2.length) | 0] : null;
+    // fallback：候選池過濾失敗 → 從路網節點直接挑「符合距離帶」的（決定性，deterministic 掃描）
+    if (!dest) {
+      const minDeg = card.route.minKm / 111, maxDeg = card.route.maxKm / 111;
+      const cands = [];
+      for (let ci = 0; ci < ROAD_NET.length; ci += 3) {
+        const chain = ROAD_NET[ci];
+        for (let pi = 0; pi < chain.length; pi += 3) {
+          const d = Math.hypot(chain[pi][0] - S.hero.pos.lat, chain[pi][1] - S.hero.pos.lng);
+          if (d >= minDeg && d <= maxDeg) cands.push({ lat: chain[pi][0], lng: chain[pi][1] });
+        }
+      }
+      dest = cands.length ? cands[(Math.random() * cands.length) | 0] : { lat: S.hero.pos.lat + minDeg, lng: S.hero.pos.lng };
+    }
+    // 貪婪推進：從最近路網節點走向目的（每步選 dot 最大且距離遞減的相鄰節點）
+    let cur = nearestNetNode(dest.lat, dest.lng);
+    const nodes = [{ lat: cur.lat, lng: cur.lng }];
+    let guard = 0;
+    let bestD = Math.hypot(cur.lat - dest.lat, cur.lng - dest.lng);
+    while (guard++ < 60) {
+      const nxt = simNextNetNode(cur.ci, cur.pi, dest.lat - cur.lat, dest.lng - cur.lng);
+      if (!nxt) break;
+      const np = ROAD_NET[nxt.ci][nxt.pi];
+      const d = Math.hypot(np[0] - dest.lat, np[1] - dest.lng);
+      // 允許持平步（正交街走 L 形路徑時必經），只在明顯遠離時停——單次遞減判斷會在街角誤停
+      if (d > bestD + 0.0008) break;
+      bestD = Math.min(bestD, d); cur = { ci: nxt.ci, pi: nxt.pi, lat: np[0], lng: np[1] };
+      nodes.push({ lat: np[0], lng: np[1] });
+      if (d < 0.0004) break;   // 到達
+    }
+    // 指標：crossings（每 200m 取樣 zoneOf）與總長
+    let crossings = 0;
+    for (let i = 0; i < nodes.length; i += 2) {
+      const z = zoneOf(nodes[i].lat, nodes[i].lng);
+      if (z === 'police' || z === 'contested') crossings++;
+    }
+    let lenDeg = 0;
+    for (let i = 1; i < nodes.length; i++) lenDeg += Math.hypot(nodes[i].lat - nodes[i-1].lat, nodes[i].lng - nodes[i-1].lng);
+    const lenM = lenDeg * 111000;
+    return { nodes, pickup: nodes[0], drop: nodes[nodes.length - 1], crossings, lenM };
+  }
+
+  // 生成架上熱線單（抽選權重照 §1；同時最多 1 張架上）
+  function rollHotline() {
+    if (!S || S.hotline.offer || S.hotline.active || S.ended) return;
+    if (gameMin() < S.hotline.nextSpawnMin) return;
+    const pool = HOTLINE_CARDS.filter(hotlineEligible);
+    if (!pool.length) { S.hotline.nextSpawnMin = gameMin() + 5; return; }
+    const total = pool.reduce((s, c) => s + c.weight, 0);
+    let r = Math.random() * total;
+    let card = pool[0];
+    for (const c of pool) { r -= c.weight; if (r <= 0) { card = c; break; } }
+    const route = genHotlineRoute(card);
+    const base = HUNDRED(HOTLINE_BASE_B * card.archMult);
+    const archMult = card.id;   // 賞金微調在 accept 時算（density 生成當下）
+    S.hotline.offer = { cardId: card.id, title: card.title, blurb: card.blurb, base, route, spawnMin: gameMin() };
+    S.hotline.nextSpawnMin = gameMin() + HUNDRED(HOTLINE.SPAWN_COOLDOWN[0] + Math.random() * (HOTLINE.SPAWN_COOLDOWN[1] - HOTLINE.SPAWN_COOLDOWN[0]));
+    emit('hotlineSignal', S.hotline.offer);
+  }
+
+  function hotlineBasePay(cardId, route) {
+    const card = HOTLINE_CARDS.find((c) => c.id === cardId);
+    // 賞金微調：base × (1 + 0.15×crossings + 0.1×round(lenM/1000))——浮動 ±15% 級距
+    return HUNDRED(HOTLINE_BASE_B * card.archMult * (1 + 0.15 * route.crossings + 0.1 * Math.round(route.lenM / 1000)));
+  }
+  function hotlineStakeAmount(cardId, pct) {
+    const card = HOTLINE_CARDS.find((c) => c.id === cardId);
+    return HUNDRED(HOTLINE_BASE_B * card.archMult * pct);
+  }
+
+  // 接單（押注檔 0/0.25/0.5）——押金進 escrow 當下扣除
+  function acceptHotline(stakePct) {
+    const off = S.hotline && S.hotline.offer;
+    if (!off || S.hotline.active) return false;
+    const card = HOTLINE_CARDS.find((c) => c.id === off.cardId);
+    const stakeAmt = hotlineStakeAmount(card.id, stakePct);
+    if (stakeAmt > 0 && S.money < stakeAmt) { emit('toast', { icon: '💸', text: `押金 $${stakeAmt.toLocaleString()} 不夠——換低檔或先賺` }); return false; }
+    if (stakeAmt > 0) S.money -= stakeAmt;
+    const speed = (typeof Sim === 'object' && Sim.heroSpeed) ? Sim.heroSpeed() : MOVE_DEG;
+    // 限時＝pathLen / heroSpeed × 1.6（rush ×0.8）——車讓同一張卡的限時自動變緊（feature）
+    const pathSec = routeLenSec(off.route, speed);
+    const finalLimit = Math.max(45, Math.round(pathSec * (card.id === 'rush' ? 0.8 : HOTLINE.TIME_BUFFER)));
+    S.hotline.active = {
+      cardId: card.id, stake: stakeAmt, stakeMult: HOTLINE.STAKE_MULT[HOTLINE.STAKE_TIERS.indexOf(stakePct)],
+      deadlineGameMin: gameMin() + Math.max(1, finalLimit / 60),   // 遊戲分（1 真實秒 = 1 遊戲分）
+      limitSec: finalLimit,   // 顯示用原始限時
+      route: off.route, leg: 'pickup', base: off.base, cardTitle: card.title,
+    };
+    S.hotline.offer = null;
+    // heat 成本：接單即預扣一半（跑完結算另一半——heat 是跑單的成本軸）
+    emit('hotlineAccepted', S.hotline.active);
+    after();
+    return true;
+  }
+  // 路線秒數：lenM / (speed度/秒→m/秒)
+  function routeLenSec(route, speedDegSec) {
+    const speedM = speedDegSec * 111000;
+    return route.lenM / Math.max(1, speedM);
+  }
+  function hotlineRemaining() {
+    const a = S.hotline && S.hotline.active;
+    if (!a) return null;
+    return Math.max(0, Math.round((a.deadlineGameMin - gameMin()) * 60));   // 暫停時 gameMin 停＝計時自然凍結（規格 §4）
+  }
+
+  // 結算
+  function settleHotline(ok, mercy) {
+    const a = S.hotline.active;
+    if (!a) return;
+    S.hotline.active = null;
+    const card = HOTLINE_CARDS.find((c) => c.id === a.cardId);
+    let pay = 0, stakeBack = 0, mercyRefund = false;
+    if (ok) {
+      pay = HUNDRED(a.base * a.stakeMult);
+      S.money += pay;
+      S.hotline.stats.done++; S.hotline.stats.streak++;
+      // heat 成本：後半結算（前半接單已預扣的語意合併——直接一次加總量）
+      S.heat = clamp100((S.heat || 0) + (HOTLINE.HEAT_PER_CARD[a.cardId] || 12));
+      emit('toast', { icon: '📞', text: `${card.title} 交付完成——進帳 $${pay.toLocaleString()}${a.stake ? `（押注 $${a.stake.toLocaleString()} 回本加成）` : ''}` });
+    } else {
+      if (mercy) { stakeBack = HUNDRED(a.stake * 0.5); S.money += stakeBack; mercyRefund = true; S.hotline.stats.failed++; S.hotline.stats.streak = 0; emit('toast', { icon: '😶', text: `超時一點點——對方念你有誠意，退一半（$${stakeBack.toLocaleString()}）` }); }
+      else { S.hotline.stats.failed++; S.hotline.stats.streak = 0; emit('toast', { icon: '📉', text: `${card.title} 失敗——押金 $${a.stake.toLocaleString()} 全沒收` }); }
+    }
+    emit('hotlineResult', { ok, pay, stake: a.stake, stakeBack, mercy: mercyRefund });
+    after();
+  }
+  // 到站判定：主角進入交付點 60m 內＝交付完成（每 tick 檢查）
+  function hotlineProgressCheck() {
+    const a = S.hotline && S.hotline.active;
+    if (!a || S.ended) return;
+    // 限時：真實秒（暫停時 Date.now 差仍在——用 gameMin 對照 deadline 遊戲分更準）
+    if (gameMin() >= a.deadlineGameMin) {
+      const overBySec = (gameMin() - a.deadlineGameMin) * 60;   // 超時換算回秒（限時以秒為單位）
+      settleHotline(false, overBySec < a.limitSec * HOTLINE.NEAR_MISS_PCT);
+      return;
+    }
+    // leg 推進：pickup → drop
+    const target = a.leg === 'pickup' ? a.route.pickup : a.route.drop;
+    if (Math.hypot(S.hero.pos.lat - target.lat, S.hero.pos.lng - target.lng) < 0.0006) {
+      if (a.leg === 'pickup') {
+        a.leg = 'drop';
+        emit('toast', { icon: '📦', text: '取件完成——送往交付點' });
+        if (a.cardId === 'twostep') emit('hotlineWaypoint', a.route);
+      } else {
+        S.heat = clamp100((S.heat || 0) + Math.round((HOTLINE.HEAT_PER_CARD[a.cardId] || 12) / 2));   // 後半 heat（cleanup ×2 在 hook 判定）
+        if (a.cardId === 'cleanup') S.heat = clamp100((S.heat || 0) + (HOTLINE.HEAT_PER_CARD[a.cardId] || 22));   // cleanup 期間 ×2 語意：完成時額外一輪
+        if (a.cardId === 'cleanup') { S.evidence = (S.evidence || 0) + 1; emit('toast', { icon: '🔍', text: '順手帶出了一份關鍵資料（蒐證 +1）' }); }
+        settleHotline(true);
+      }
+    }
+  }
+  // 主動放棄：押金沒收 50%
+  function abandonHotline() {
+    const a = S.hotline && S.hotline.active;
+    if (!a) return false;
+    const back = HUNDRED(a.stake * HOTLINE.ABANDON_PENALTY);
+    S.money += back;
+    S.hotline.active = null;
+    S.hotline.stats.failed++; S.hotline.stats.streak = 0;
+    emit('toast', { icon: '🚪', text: `放棄熱線單——押金退 $${back.toLocaleString()}（另一半當教訓）` });
+    emit('hotlineResult', { ok: false, pay: 0, stake: a.stake, stakeBack: back, mercy: true, abandoned: true });
+    after();
+    return true;
+  }
+
+  // ===== v0.6.0 警車行為層（熱線單進行中）：攔截／追擊 =====
+  let copChase = null;   // { keys: [key...], mode, untilMin } — 行為中的警車（最多 1-2 台）
+  function hotlineCopTick() {
+    const a = S.hotline && S.hotline.active;
+    if (!a || S.ended) { copChase = null; return; }
+    const nightNow = policeDensity() < 0.75;
+    const chaseMode = a.stakeMult >= 1.75 || (S.heat || 0) >= 85;
+    const interceptR = nightNow ? HOTLINE.COP_INTERCEPT_R_NIGHT : HOTLINE.COP_INTERCEPT_R;
+    const hp = S.hero.pos;
+    // 解除：園區瓣內鐵律
+    if (zoneOf(hp.lat, hp.lng) === 'park') { copChase = null; return; }
+    const cops = GameMap.copPositions();
+    if (!cops.length) return;
+    if (copChase) {
+      // 追擊中：貼近主角（速度 1.15×）——直接朝主角位置移動（行為層覆寫）
+      for (const k of copChase.keys) {
+        /* 巡邏軌跡由 copPos 決定性——行為層在這裡不搬 marker（map.js 擁有），
+           只發事件與觸發查崗；實際貼近由 map.js hotlineCopRender 依 copsLive 最近的 1-2 台做位置偏移 */
+      }
+      if (gameMin() >= copChase.untilMin) { copChase = null; return; }
+      // 進入查崗距離 → 觸發查崗（熱線單同步判定失敗＋押金沒收）
+      for (const c of cops) {
+        if (Math.hypot(c.lat - hp.lat, c.lng - hp.lng) < HOTLINE.COP_ARREST_R) {
+          if (!paused) {
+            paused = true;
+            S.heat = clamp100((S.heat || 0) + Math.max(0, HEAT.CHECKED - upgradeLevel('checkshield') * 3));
+            emit('heroCheck', hp);
+            if (S.hotline.active) { S.hotline.active = null; S.hotline.stats.failed++; S.hotline.stats.streak = 0; emit('toast', { icon: '📉', text: '被攔下盤查——熱線單開天窗，押金全沒收' }); }
+          }
+          copChase = null;
+          return;
+        }
+      }
+      return;
+    }
+    // 觸發：距任一警車 <90m（夜 72m）且 heat≥61 → 攔截
+    let nearest = null, nearestD = Infinity;
+    for (const c of cops) {
+      const d = Math.hypot(c.lat - hp.lat, c.lng - hp.lng);
+      if (d < nearestD) { nearestD = d; nearest = c; }
+    }
+    if (nearest && nearestD < interceptR && (S.heat || 0) >= 61) {
+      const second = chaseMode ? cops.filter((c) => c !== nearest).slice(0, 1) : [];
+      copChase = { mode: chaseMode ? 'chase' : 'intercept', keys: [nearest, ...second], untilMin: gameMin() + (chaseMode ? HOTLINE.CHASE_MAX_MINS : HOTLINE.COP_MAX_MINS) };
+      emit('hotlineChase', { mode: copChase.mode });
+    }
+  }
+
   function heatTick() {
     if (!S || !S.hero) return;
     const pos = S.hero.pos;
@@ -897,6 +1206,10 @@ const Sim = (() => {
 
     // 主角：操控移動＋警車盤查（放最後，移動不被暫停邏輯吃掉）
     heroTick();
+    // v0.6.0 熱線單：抽選架單／到站判定與限時／警車行為層
+    rollHotline();
+    hotlineProgressCheck();
+    hotlineCopTick();
 
     // 快跑途中跳事件（只在工作階段）
     for (const id in S.jobs) {
@@ -1215,6 +1528,7 @@ const Sim = (() => {
     if (!S.gearMax) S.gearMax = {};   // v0.5.1：買入時的 max（舊檔補空表——沒記錄的裝備 UI 退回顯示剩餘次數）
     if (S.heat === undefined) S.heat = 0;   // v0.4.0 甲：舊存檔補 heat 0
     if (!S.upgrades) S.upgrades = {};        // v0.5.0 升級樹：舊檔補空表
+    if (!S.hotline) S.hotline = { offer: null, active: null, nextSpawnMin: 10, stats: { done: 0, failed: 0, streak: 0 } };  // v0.6.0 熱線單（v 欄 +1 語意）
     for (const m of S.missions) if (!m.expireMin) m.expireMin = gameMin() + MISSION_TTL[0];
     S.v = 2;
     // 關頁時正好在攻堅決策：恢復暫停，ui 進場後會重彈策略卡
@@ -1338,6 +1652,22 @@ const Sim = (() => {
     poiList, poiNearHero, triggerPoi, chooseHeroEvent,  // V3.6-A 互動地標
     upkeepCost, useDurable, useDecoy,  // v0.4.0 乙＋v0.4.1：園區開銷、裝備耐久、壓熱消耗品
     heatLevel: () => (S ? S.heat || 0 : 0),  // v0.4.0 甲：heat 讀數（map.js 紅暈與巡查車偏移用）
+    hotlineOffer: () => (S ? S.hotline.offer : null),
+    hotlineActive: () => (S ? S.hotline.active : null),
+    hotlineRoute: () => (S && S.hotline.active ? S.hotline.active.route : null),
+    hotlineRemaining: () => (S && S.hotline.active ? Math.max(0, Math.round((S.hotline.active.deadlineGameMin - gameMin()) * 60)) : null),   // 剩餘真實秒（遊戲分×60——1 遊戲分走 1 真實秒，但限時以真實秒計時）
+    acceptHotline, abandonHotline,
+    hotlineDebug: () => (S ? JSON.parse(JSON.stringify(S.hotline)) : null),
+    spawnHotline: (cardId) => {   // v0.6.0 測試掛點（QA CDP 驅動用）
+      if (typeof location !== 'undefined' && !/[?&]debug=1/.test(location.search)) return false;
+      if (!S || S.hotline.offer || S.hotline.active) return false;
+      const card = HOTLINE_CARDS.find((c) => c.id === cardId) || HOTLINE_CARDS[0];
+      const route = genHotlineRoute(card);
+      const base = HUNDRED(HOTLINE_BASE_B * card.archMult);
+      S.hotline.offer = { cardId: card.id, title: card.title, blurb: card.blurb, base, route, spawnMin: gameMin() };
+      emit('hotlineSignal', S.hotline.offer);
+      return true;
+    },
     heroSpeed: () => (S ? MOVE_DEG * (S.gear.car ? MOVE_CAR_MULT : 1) * (S.hero.offRoad ? OFFROAD_SLOW : 1) : 0),  // v0.5.3：路網滑行速度（度/秒）
     getUpgradeTree, buyUpgrade, upgradeLevel, upgradeCost,  // v0.5.0 升級系統（UI 層只吃 API）
   };
