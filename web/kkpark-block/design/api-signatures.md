@@ -72,6 +72,12 @@ Faction.flip(S) -> S            // 就地翻轉：S.faction、綠藍定義、星
 Faction.sideOf(S, block) -> 'mine' | 'foe'   // B 上色一律問這個，不讀 ctrl 正負
 ```
 - **B 渲染鐵律**：色塊意義永遠走 `Faction.sideOf()`，跳槽反轉後 B 零改動。
+- **踩點（v0.2.0 落地，spec §2.2 玩家主動手段第一項）**：
+
+```js
+Faction.scout(S, block) -> {ok: true, blk, ctrl} | {ok: false, reason: 'cd'}
+```
+  站進街區呼叫，ctrl +8、冷卻 5s（引擎內部計時）。`push(S)` 回傳擴充為 `{events, locks}`：`locks=[{blk, side}]` 為定色事件（|ctrl|==100 連續 3 天）。
 
 ## 3. Dice — 檢定系統（A3）
 
@@ -125,10 +131,12 @@ Base.offline(S, hoursAway) -> {gain, backlog}  // 離線 1/8，上限 8h；backl
 ```js
 Save.load()  -> S | null        // localStorage key 'kkpark_block_save'；無檔回 null
 Save.save(S)                    // 睡覺段呼叫（一天一個 save 點）
-Save.dayEnd(S) -> S             // 日結流水線：Faction.push → 巡邏重排 → 怪潮部署 → 疑犯到期 → day+1
-Save.newGame() -> S             // 造新檔（seed 隨機、初始 2 哨所、首據點）
+Save.dayEnd(S) -> S             // 日結流水線（v0.2.0）：收帳（貨×$3→錢，emit 'money'）→ Faction.push → day+1 → 存檔 → emit 'dayEnd'
+                                //   dayEnd payload：{day, goodsSold, income, events:[{blk,from,to}], locks:[{blk,side}]}
+Save.newGame() -> S             // 造新檔（seed 隨機、首據點 1 座在 blk 0——切片 §12；哨所/watch 街區照 mock 圖）
 Save.reset()                    // 刪檔（debug 用）
 ```
+- v0.2.0 常數：`GOODS_RATE=3`（貨→錢）、`SCOUT_CD=5s`／`SCOUT_GAIN=8`（踩點）、`NEIGHBOR_R=460`（mock 圖鄰接中心距；Voronoi 真圖改共用邊判定）。
 - 中途離開（不睡覺關頁）：下次 load 自動標記「未結算」，收益減半規則由 Save.load 補算。
 - 版本遷移：`Save.load` 內按 `S.ver` 逐級補欄位，B 不用管。
 
@@ -141,8 +149,8 @@ Save.reset()                    // 刪檔（debug 用）
 | `wave` | {n, units} | 怪潮湧入 |
 | `arrest` | {attr, dc} | 進被捕檢定畫面（B 開三選一 UI） |
 | `flip` | faction | 跳槽翻轉 |
-| `dayEnd` | {report} | 睡覺結算（勢力戰報，B 開機面板吃） |
-| `money` | delta | 金錢變動（浮字用） |
+| `dayEnd` | {day, goodsSold, income, events[], locks[]} | 睡覺結算（勢力戰報，B 開機面板吃） |
+| `money` | delta | 金錢變動（浮字用；v0.2.0 起引擎收帳時也 emit） |
 
 ---
 *B 先 mock 的入口：載入本檔所述模組空殼（回固定資料），walk.js/main.js 即可開工。A 實現後原簽名替換，B 零改動。*

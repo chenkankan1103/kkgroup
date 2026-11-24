@@ -39,6 +39,8 @@
   GroundRender.init(world, tex.tile);
   BlockRender.init(world);
   BlockRender.render();
+  BaseRender.init(world);
+  BaseRender.render();
   Walk.init(app, world, tex.man);
 
   // ===== HUD 與事件掛點（簽名 §7） =====
@@ -53,6 +55,89 @@
   Bus.on('money', () => { $('hudMoney').textContent = '$' + S.money.toLocaleString(); });
   Bus.on('arrest', (a) => openArrest(a));   // 被捕檢定卡（mock Dice 偏向成功）
   Bus.on('flip', () => BlockRender.render());   // 跳槽翻轉 → 色塊語意全換（渲染碼零改動的驗收點）
+
+  // ===== v0.2.0：踩點（E）／據點點擊（E 近據點）／睡覺結算（T）／晨報（dayEnd） =====
+  let reportOpen = false;
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyE') act();
+    if (e.code === 'KeyT') sleep();
+  });
+
+  function act() {
+    const p = Walk.pos();
+    const near = (S.bases || []).find((b) => {
+      const c = S.blocks[b.blk].center;
+      return Math.hypot(p.x - c[0], p.y - c[1]) < 28;
+    });
+    if (near) {                       // 據點互動優先：點擊機 +1 貨（spec §7 主按鈕的切片版）
+      Base.click(near);
+      floatAt(p.x, p.y - 24, '+1 貨', '#ffe14d');
+      return;
+    }
+    const blk = BlockMap.blockAt(S, p.x, p.y);
+    if (!blk) return;
+    const r = Faction.scout(S, blk);  // 踩點：站進街區 +8，冷卻 5s（spec §2.2）
+    if (r.ok) {
+      floatAt(blk.center[0], blk.center[1] - 16, '+8', '#4dff9d');
+      BlockRender.render();
+    } else {
+      floatAt(blk.center[0], blk.center[1] - 16, '…', '#8b97b0');
+    }
+  }
+
+  function sleep() {
+    if (reportOpen) return;
+    Save.dayEnd(S);                   // 引擎：收帳→推拉→day+1→存檔→emit dayEnd
+  }
+
+  Bus.on('dayEnd', (rep) => {
+    reportOpen = true;
+    const lines = [];
+    if (rep.income > 0) lines.push(`貨 ${rep.goodsSold} → 收帳 $${rep.income.toLocaleString()}`);
+    rep.events.forEach((ev) => lines.push(`街區 ${ev.blk + 1} 易手：${ev.from > 0 ? '綠' : '藍'}${ev.from} → ${ev.to > 0 ? '綠' : '藍'}${ev.to}`));
+    rep.locks.forEach((lk) => lines.push(`街區 ${lk.blk + 1} 定色成${lk.side === 'park' ? '綠' : '藍'}！`));
+    if (!lines.length) lines.push('夜裡無事——街區板面緩慢流動');
+    const modal = document.createElement('div');
+    modal.id = 'reportModal';
+    modal.innerHTML = `
+      <div class="arrest-card">
+        <h3>🌅 第 ${rep.day} 天早晨</h3>
+        ${lines.map((l) => `<p>${l}</p>`).join('')}
+        <button class="ev-btn" id="repOk">出門</button>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#repOk').onclick = () => {
+      modal.remove();
+      reportOpen = false;
+      $('hudDay').textContent = `第 ${S.day} 天`;
+      BlockRender.render();
+      BaseRender.render();
+    };
+  });
+
+  // 浮字：世界座標 +9 的短命 Cubic 11 文字（900ms 上飄淡出）
+  function floatAt(wx, wy, text, color) {
+    const t = new PIXI.Text({
+      text,
+      style: {
+        fontFamily: '"Cubic 11", monospace',
+        fontSize: 13, fill: color,
+        dropShadow: { blur: 2, distance: 0, color: 0x0b0e14, alpha: 0.8 },
+      },
+    });
+    t.anchor.set(0.5);
+    t.position.set(wx, wy);
+    world.addChild(t);
+    const t0 = performance.now();
+    const f = () => {
+      const k = (performance.now() - t0) / 900;
+      if (k >= 1) { app.ticker.remove(f); t.destroy(); return; }
+      t.y = wy - k * 22;
+      t.alpha = 1 - k;
+    };
+    app.ticker.add(f);
+  }
 
   // ===== 檢定卡（arrest 三選一——spec §5；mock Dice 直接偏成功） =====
   function openArrest(a) {

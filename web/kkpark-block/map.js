@@ -68,3 +68,31 @@ const GroundRender = (() => {
   }
   return { init };
 })();
+
+/* ===== 據點標記（v0.2.0 切片：小屋圖示，金框——據點內部視角 B10 後替換） ===== */
+const BaseRender = (() => {
+  let layer = null;
+
+  function init(world) {
+    layer = new PIXI.Container();
+    world.addChild(layer);
+  }
+
+  function render() {
+    if (!layer) return;
+    layer.removeChildren();
+    for (const base of S.bases || []) {
+      const c = S.blocks[base.blk].center;
+      const g = new PIXI.Graphics();
+      g.poly([c[0] - 14, c[1] - 26, c[0], c[1] - 38, c[0] + 14, c[1] - 26])
+        .fill({ color: 0x2a3348 })
+        .stroke({ width: 1, color: 0xffe14d, alpha: 0.5 });
+      g.rect(c[0] - 12, c[1] - 26, 24, 18)
+        .fill({ color: 0x1a2130, alpha: 0.95 })
+        .stroke({ width: 2, color: 0xffe14d, alpha: 0.9 });
+      layer.addChild(g);
+    }
+  }
+
+  return { init, render };
+})();

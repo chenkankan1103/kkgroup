@@ -19,8 +19,8 @@
 <!-- PixiJS v8：CDN 單引入，無建置流程（redesign-spec-final §10） -->
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.6.6/dist/pixi.min.js"></script>
 <!-- 檔案結構照 redesign-spec-final §10；A=map 生成/faction/dice/save/main 日迴圈，B=walk/map 渲染/star 渲染/base 渲染/audio -->
-<!-- mocks.js＝A 側模組空殼（照 design/api-signatures.md 簽名回 mock）——A 真實作落地後刪檔＋移除本行 -->
-<script src="mocks.js"></script>
+<!-- engine.js＝A 側模組（v0.2.0：Faction/Dice/Base/Save 真實作；BlockMap/Star 仍 mock，見檔頭註記） -->
+<script src="engine.js"></script>
 <script src="map.js"></script>
 <script src="walk.js"></script>
 <script src="main.js"></script>
