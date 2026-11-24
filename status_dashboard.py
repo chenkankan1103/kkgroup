@@ -586,14 +586,9 @@ async def update_dashboard_logs(bot, bot_type: str):
                         f"[UPDATE LOGS] {bot_type} fetch_message was cancelled, skipping this cycle"
                     )
                 return
-            except discord.HTTPException as e:
-                if e.code == 50083:  # Thread is archived
-                    if bot_type not in QUIET_UPDATE_BOTS:
-                        print(
-                            f"[UPDATE LOGS] {bot_type} thread archived, skipping update"
-                        )
-                    return
-                raise
+            # 注意順序：NotFound 與 Forbidden 都是 HTTPException 的子類，
+            # 必須放在 HTTPException 之前，否則會被先攔截再 raise，
+            # 永遠走不到下面的重建分支（404 Unknown Message 迴圈的根因）
             except discord.NotFound:
                 if bot_type not in QUIET_UPDATE_BOTS:
                     print(
@@ -612,6 +607,14 @@ async def update_dashboard_logs(bot, bot_type: str):
                     )
             except discord.Forbidden:
                 print(f"[UPDATE LOGS ERROR] {bot_type} no permission to edit message")
+            except discord.HTTPException as e:
+                if e.code == 50083:  # Thread is archived
+                    if bot_type not in QUIET_UPDATE_BOTS:
+                        print(
+                            f"[UPDATE LOGS] {bot_type} thread archived, skipping update"
+                        )
+                    return
+                raise
             except Exception as e:
                 # catch-all for other errors; print traceback
                 print(f"[UPDATE LOGS ERROR] {bot_type} log update error: {e}")
