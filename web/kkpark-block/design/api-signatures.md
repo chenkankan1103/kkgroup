@@ -1,7 +1,7 @@
 # 街區棋王 接縫契約 v1 — 寫手 A API 簽名（B 吃這份 mock）
 
 > 來源：redesign-spec-final.md §11 接縫契約。A 實現、B mock 先行。
-> 全域模組：`Map / Faction / Dice / Star / Base / Save`（無建置工具，`<script>` 順序載入，皆掛 window）。
+> 全域模組：`BlockMap / Faction / Dice / Star / Base / Save`（無建置工具，`<script>` 順序載入，皆掛 window）。
 > 資料中心：單一存檔物件 `S`，所有模組只讀寫 `S` 不另立全域。`Bus`（事件匯流排）沿用舊 `emit/on` 模式。
 > 中性代稱：園區／巡查方。版本 v0.1.0。
 
@@ -20,7 +20,7 @@ S = {
   heat: 0,                // 星星進度條（0-100，滿 100 升星）
   attrs: { talk: 1, agility: 1, brain: 1, guts: 1 },   // 口才/身手/頭腦/膽識
   attrExp: { talk: 0, agility: 0, brain: 0, guts: 0 }, // 經驗粒灌注進度
-  blocks: [Block...],     // 見 §1（Map.generate 產出後存入）
+  blocks: [Block...],     // 見 §1（BlockMap.generate 產出後存入）
   bases: [Base...],       // 見 §5
   suspects: [],           // 暗件佇列（離線代價）：{kind, dayDue, payload}
   skills: { bait: 0, smoke: 0, bot: 0 },  // 自動技能冷卻剩秒
@@ -45,10 +45,12 @@ Block = {
 }
 ```
 
-## 1. Map — Voronoi 街區生成（A1）
+## 1. BlockMap — Voronoi 街區生成（A1）
+
+> ⚠️ 命名規則：模組名不得撞 JS 內建（`Map` 會遮蔽 built-in，Pixi v8 內部 `new Map()` 直接炸）。原 `Map` 已更名 `BlockMap`。
 
 ```js
-Map.generate(seed) -> {blocks: Block[], obstacles: Uint8Array}
+BlockMap.generate(seed) -> {blocks: Block[], obstacles: Uint8Array}
 ```
 - seed 種子抖動＋Poisson 最小間距撒 12-20 點；Voronoi 分割；Chaikin 平滑一次。
 - `obstacles`：世界網格 0/1（牆/樹格），B 的 walk.js 碰撞直接吃。格寬 32px。

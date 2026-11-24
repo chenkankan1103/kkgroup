@@ -1,6 +1,6 @@
 'use strict';
 /* map.js — 街區色塊渲染（寫手 2；redesign-spec-final §9.1）
-   資料源：S.blocks（Map.generate 產出，簽名 §1）。渲染鐵律（簽名 §2）：
+   資料源：S.blocks（BlockMap.generate 產出，簽名 §1）。渲染鐵律（簽名 §2）：
    上色一律問 Faction.sideOf()——渲染碼不讀 ctrl 正負，跳槽反轉零改動。
    綠 #4dff9d／藍 #5aa7ff，透明度八階 0.08→0.45；色塊永遠半透明疊在磚上
    （磚色不變）——勢力是「光」不是「漆」。中心數字 Cubic 11。 */
@@ -62,8 +62,8 @@ const BlockRender = (() => {
 /* ===== 磚層（底）：tile_01 草地滿鋪（64px 原生 → scale 0.5 = 32px，NEAREST 像素） ===== */
 const GroundRender = (() => {
   function init(world, tileTex) {
-    const g = new PIXI.TilingSprite({ texture: tileTex, width: Map.W, height: Map.H });
-    g.tileScale.set(Map.TILE / 64);   // 64 原生 → 32 格
+    const g = new PIXI.TilingSprite({ texture: tileTex, width: BlockMap.W, height: BlockMap.H });
+    g.tileScale.set(BlockMap.TILE / 64);   // 64 原生 → 32 格
     world.addChildAt(g, 0);
   }
   return { init };

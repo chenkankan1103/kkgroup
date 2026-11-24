@@ -9,24 +9,24 @@
   PIXI.TextureSource.defaultOptions.scaleMode = 'nearest';
 
   const app = new PIXI.Application();
-  await app.init({ background: 0x0b0e14, resizeTo: window, antialias: false });
+  await app.init({ background: 0x0b0e14, resizeTo: window, antialias: false, preference: 'webgl' });
   document.body.appendChild(app.canvas);
 
   // Cubic 11 是 web font——canvas Text 用前先等字體就緒（否則中心數字掉 fallback）
   try { await document.fonts.load('13px "Cubic 11"'); } catch (e) {}
 
   // 素材：Kenney Topdown Shooter（CC0，web/kkpark-map/assets/kenney-topdown/）——跨目錄引用不複製
-  const A = 'web/kkpark-block/../kkpark-map/assets/kenney-topdown/PNG/';
-  const tex = await PIXI.Assets.load({
-    tile: A + 'Tiles/tile_01.png',
-    man: A + 'Man Brown/manBrown_stand.png',
-  });
+  const A = '../kkpark-map/assets/kenney-topdown/PNG/';
+  const tex = await PIXI.Assets.load([
+    { alias: 'tile', src: A + 'Tiles/tile_01.png' },
+    { alias: 'man', src: A + 'Man Brown/manBrown_stand.png' },
+  ]);
 
-  // ===== 開檔：Save.load() || Save.newGame()（簽名 §6；mock newGame 內含 Map.generate） =====
+  // ===== 開檔：Save.load() || Save.newGame()（簽名 §6；mock newGame 內含 BlockMap.generate） =====
   window.S = Save.load() || Save.newGame();
 
   // ===== 地圖生成（簽名 §1）：blocks 進 S，obstacles 餵 walk 碰撞 =====
-  const gen = (S.blocks && S.blocks.length) ? { blocks: S.blocks, obstacles: new Uint8Array(Math.ceil(Map.W / Map.TILE) * Math.ceil(Map.H / Map.TILE)) } : Map.generate(S.seed);
+  const gen = (S.blocks && S.blocks.length) ? { blocks: S.blocks, obstacles: new Uint8Array(Math.ceil(BlockMap.W / BlockMap.TILE) * Math.ceil(BlockMap.H / BlockMap.TILE)) } : BlockMap.generate(S.seed);
   S.blocks = gen.blocks;
   Walk.setObstacles(gen.obstacles);
 
@@ -34,6 +34,7 @@
   const world = new PIXI.Container();
   world.scale.set(2);
   app.stage.addChild(world);
+  globalThis.__app = app; globalThis.__world = world;   // QA 探針掛點
 
   GroundRender.init(world, tex.tile);
   BlockRender.init(world);

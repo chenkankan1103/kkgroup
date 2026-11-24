@@ -21,7 +21,7 @@ window.S = {
 };
 
 /* ===== Map（簽名 §1）：mock 8 街區（切片範圍），obstacles 全 0 ===== */
-const Map = {
+const BlockMap = {
   W: 1440, H: 960, TILE: 32,
   generate(seed) {
     void seed;
@@ -36,11 +36,11 @@ const Map = {
       { type: 'biz',     ctrl: -95, polygon: [[1130, 450], [1410, 460], [1425, 660], [1390, 920], [1140, 910], [1108, 650]] },
     ];
     const blocks = raw.map((r, i) => ({
-      id: i, polygon: r.polygon, center: Map.centroid(r.polygon),
+      id: i, polygon: r.polygon, center: BlockMap.centroid(r.polygon),
       ctrl: r.ctrl, locked: null, lockStreak: 0, type: r.type, yieldRate: 1.0, watch: 0,
     }));
     S.blocks = blocks;
-    const gw = Math.ceil(Map.W / Map.TILE), gh = Math.ceil(Map.H / Map.TILE);
+    const gw = Math.ceil(BlockMap.W / BlockMap.TILE), gh = Math.ceil(BlockMap.H / BlockMap.TILE);
     return { blocks, obstacles: new Uint8Array(gw * gh) };   // mock 無障礙
   },
   centroid(poly) {
@@ -120,7 +120,7 @@ const Save = {
     return S;
   },
   newGame() {
-    const gen = Map.generate(S.seed);
+    const gen = BlockMap.generate(S.seed);
     S.blocks = gen.blocks;
     return S;
   },

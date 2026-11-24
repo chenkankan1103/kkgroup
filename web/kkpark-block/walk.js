@@ -20,7 +20,7 @@ const Walk = (() => {
   let cam = { x: 0, y: 0 };
   let t = 0;                  // 動畫時鐘
   let moving = false;
-  let obstacles = null;       // Map.generate 產出（簽名 §1；格寬 32px，1=牆/樹）
+  let obstacles = null;       // BlockMap.generate 產出（簽名 §1；格寬 32px，1=牆/樹）
 
   function init(application, worldContainer, manTex) {
     app = application;
@@ -43,10 +43,10 @@ const Walk = (() => {
   }
 
   function camTargetX() {
-    return clamp(app.screen.width / 2 - hero.position.x, Map.W - app.screen.width / world.scale.x, 0);
+    return clamp(app.screen.width / 2 - hero.position.x * world.scale.x, app.screen.width - BlockMap.W * world.scale.x, 0);
   }
   function camTargetY() {
-    return clamp(app.screen.height / 2 - hero.position.y, Map.H - app.screen.height / world.scale.y, 0);
+    return clamp(app.screen.height / 2 - hero.position.y * world.scale.y, app.screen.height - BlockMap.H * world.scale.y, 0);
   }
   function clamp(v, min, max) { return v < min ? min : v > max ? max : v; }
 
@@ -57,9 +57,9 @@ const Walk = (() => {
   // 障礙格碰撞（簽名 §1 obstacles）：目標格=1 → 該軸移動取消（軸分離滑牆）
   function blocked(x, y) {
     if (!obstacles) return false;
-    const gx = Math.floor(x / Map.TILE), gy = Math.floor(y / Map.TILE);
-    const gw = Math.ceil(Map.W / Map.TILE);
-    if (gx < 0 || gy < 0 || gx >= gw || gy >= Math.ceil(Map.H / Map.TILE)) return true;
+    const gx = Math.floor(x / BlockMap.TILE), gy = Math.floor(y / BlockMap.TILE);
+    const gw = Math.ceil(BlockMap.W / BlockMap.TILE);
+    if (gx < 0 || gy < 0 || gx >= gw || gy >= Math.ceil(BlockMap.H / BlockMap.TILE)) return true;
     return obstacles[gy * gw + gx] === 1;
   }
 
@@ -81,8 +81,8 @@ const Walk = (() => {
       if (!blocked(nx, hero.position.y)) hero.position.x = nx;
       if (!blocked(hero.position.x, ny)) hero.position.y = ny;
       // 世界邊界（街區多邊形內部全可走——spec §3）
-      hero.position.x = clamp(hero.position.x, 12, Map.W - 12);
-      hero.position.y = clamp(hero.position.y, 14, Map.H - 14);
+      hero.position.x = clamp(hero.position.x, 12, BlockMap.W - 12);
+      hero.position.y = clamp(hero.position.y, 14, BlockMap.H - 14);
       // 圖朝上 → rotation = 移動角 + 90°
       hero.rotation = Math.atan2(dy, dx) + Math.PI / 2;
     }
