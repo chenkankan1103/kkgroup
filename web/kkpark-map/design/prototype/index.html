@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>審訊桌 — 灰盒雛型 v0（方向①＋放置層）</title>
+<style>
+  :root{
+    --bg:#14161a; --panel:#1e2229; --line:#2c313a; --paper:#232830;
+    --gold:#d4a94e; --red:#c25450; --teal:#3a9d8f; --gray:#8b93a1; --text:#d7dbe2;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{background:var(--bg); color:var(--text); font-family:"Microsoft JhengHei",sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden}
+  header{display:flex; gap:14px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap}
+  .meter{min-width:150px; flex:1}
+  .meter .lab{font-size:12px; color:var(--gray); display:flex; justify-content:space-between}
+  .bar{height:10px; background:#0e1013; border-radius:5px; overflow:hidden; margin-top:3px}
+  .bar i{display:block; height:100%; width:50%; transition:width .35s}
+  #barG i{background:var(--gold)} #barP i{background:var(--teal)} #barH i{background:var(--red)}
+  .stat{font-size:15px; color:var(--gold); min-width:90px}
+  .stat small{color:var(--gray); display:block; font-size:11px}
+  main{flex:1; display:flex; gap:12px; padding:12px 16px; min-height:0}
+  #desk{flex:1.4; display:flex; flex-direction:column; gap:10px; min-width:0}
+  #fileCard{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:16px 18px; flex:1; overflow:auto}
+  #fileCard h2{font-size:15px; color:var(--gold); border-bottom:1px dashed var(--line); padding-bottom:8px; margin-bottom:10px}
+  .row{display:flex; gap:8px; padding:5px 0; font-size:15px}
+  .row b{color:var(--gray); font-weight:normal; min-width:70px}
+  .darkBadge{margin-top:10px; background:#3a2b18; border:1px solid var(--gold); color:var(--gold); padding:8px 12px; border-radius:6px; font-size:14px}
+  #truth{margin-top:10px; color:var(--red); font-size:14px; display:none}
+  #stamps{display:flex; gap:10px}
+  #stamps button{flex:1; padding:14px 0; font-size:17px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--text); cursor:pointer}
+  #btnPass{background:#1c3a35; border-color:var(--teal); color:#7fd6c9}
+  #btnHold{background:#3a1f1e; border-color:var(--red); color:#e39a96}
+  #btnFlag{background:#242830}
+  #stamps button:hover{filter:brightness(1.25)}
+  #rules{flex:.8; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow:auto; min-width:230px}
+  #rules h3{font-size:13px; color:var(--gray); margin:10px 0 6px}
+  #rules li{font-size:14px; margin:5px 0 5px 18px}
+  #rules .dark{color:var(--gold)}
+  #log{height:110px; overflow:auto; border-top:1px solid var(--line); padding:8px 16px; font-size:13px}
+  #log p{padding:2px 0; color:var(--gray)}
+  #log .good{color:var(--teal)} #log .bad{color:var(--red)} #log .gold{color:var(--gold)}
+  .modal{position:fixed; inset:0; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center}
+  .hidden{display:none}
+  .box{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:22px 26px; width:min(560px,92vw); max-height:86vh; overflow:auto}
+  .box h2{color:var(--gold); font-size:18px; margin-bottom:10px}
+  .box p{font-size:14px; margin:6px 0}
+  .box button{margin:10px 8px 0 0; padding:10px 16px; border-radius:8px; border:1px solid var(--line); background:var(--paper); color:var(--text); cursor:pointer; font-size:14px}
+  .box button:hover{filter:brightness(1.25)}
+  .box .buy{border-color:var(--gold); color:var(--gold)}
+  .box .disabled{opacity:.4; pointer-events:none}
+  .k{color:var(--gray)}
+  #stackWarn{color:var(--red)}
+</style>
+</head>
+<body>
+<header>
+  <div class="meter"><div class="lab"><span>園區信任</span><span id="vG">50</span></div><div class="bar" id="barG"><i></i></div></div>
+  <div class="meter"><div class="lab"><span>巡查績效</span><span id="vP">50</span></div><div class="bar" id="barP"><i></i></div></div>
+  <div class="meter"><div class="lab"><span>識破度</span><span id="vH">0</span></div><div class="bar" id="barH"><i></i></div></div>
+  <div class="stat"><span id="vM">200</span><small>營運金</small></div>
+  <div class="stat"><span id="vD">第 1 天</span><small id="vS">暗件 0/8</small></div>
+</header>
+
+<main>
+  <section id="desk">
+    <div id="fileCard">
+      <h2>登記檔案 <span class="k" id="fileNo"></span></h2>
+      <div class="row"><b>申請人</b><span id="fName"></span></div>
+      <div class="row"><b>貨品數量</b><span id="fItem"></span></div>
+      <div class="row"><b>來源</b><span id="fSrc"></span></div>
+      <div class="row"><b>附件</b><span id="fAtt"></span></div>
+      <div class="darkBadge" id="fDark" style="display:none">⚠ 園區暗記：此件需過（過了有厚賞）</div>
+      <div id="truth"></div>
+    </div>
+    <div id="stamps">
+      <button id="btnPass" onclick="stamp('pass')">放行 [1]</button>
+      <button id="btnHold" onclick="stamp('hold')">扣留 [2]</button>
+      <button id="btnFlag" onclick="stamp('flag')">標記覆核 [3]</button>
+    </div>
+  </section>
+  <aside id="rules">
+    <h3>巡查方手冊（公開）</h3>
+    <li>單件數量上限 <u>100</u></li>
+    <li>來源須為登記倉：<u>南門倉／北貨站／中央批發</u></li>
+    <li>附件齊全（出貨單＋封條編號）</li>
+    <h3>園區暗規（只給你）</h3>
+    <li class="dark">帶暗記的件，放行＝厚賞</li>
+    <li class="dark">暗件積壓會生塵——每晚結算處理</li>
+    <h3>巡查抽查</h3>
+    <li>每 5 件覆核最近 <u>3</u> 件放行</li>
+    <li>帶病放行被抽中 → 識破 +15</li>
+  </aside>
+</main>
+<footer id="log"></footer>
+
+<div class="modal hidden" id="night">
+  <div class="box">
+    <h2 id="nTitle">夜班結算</h2>
+    <p id="nIncome"></p>
+    <p id="nStack"></p>
+    <p class="k">暗件處理（回來的第一個決定）：</p>
+    <button class="buy" id="nBurn" onclick="nightAct('burn')">全數燒毀（-80/件，園區 -2/件，識破不動）</button>
+    <button class="buy" id="nRpt" onclick="nightAct('rpt')">全數交差（+60/件，園區 +3/件，識破 +4/件）</button>
+    <button onclick="nightAct('keep')">留著不管（下輪審計風險）</button>
+    <p class="k" style="margin-top:14px">掩護工具（一次性）：</p>
+    <button class="buy" id="up1" onclick="buy(1)">假章 300——帶病放行的識破減半</button>
+    <button class="buy" id="up2" onclick="buy(2)">加密線路 500——抽查只覆核最近 1 件</button>
+    <br><button id="nGo" onclick="nextDay()">開始第 2 天 →</button>
+  </div>
+</div>
+
+<div class="modal hidden" id="over">
+  <div class="box">
+    <h2 id="oTitle"></h2>
+    <p id="oDesc"></p>
+    <button onclick="location.reload()">再來一局</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const S={garden:50,patrol:50,heat:0,money:200,day:1,no:0,stack:0,
+  up:{1:false,2:false},passed:[],today:0,cur:null,over:false};
+
+const NAMES=["陳先生","林小姐","王先生","黃先生","張小姐","吳先生","劉先生","蔡小姐"];
+const ITEMS=[["茶葉禮盒",40],["電子零件",90],["保養品",60],["五金工具",25],["保健食品",80],["手工點心",95]];
+const SRCS=["南門倉","港區物流","北貨站","第七倉","中央批發"];
+const OKSRC=["南門倉","北貨站","中央批發"];
+const ATTS=[["齊全",true],["齊全",true],["缺出貨單",false],["缺封條編號",false]];
+
+function log(t,cls){const p=document.createElement("p"); if(cls)p.className=cls;
+  p.textContent=t; $("log").prepend(p);}
+
+function newFile(){
+  const qty=ITEMS[Math.random()*ITEMS.length|0];
+  const src=SRCS[Math.random()*SRCS.length|0];
+  const att=ATTS[Math.random()*ATTS.length|0];
+  let dirty=null;
+  if(qty[1]>100) dirty="數量超限（"+qty[1]+" > 100）";
+  else if(!OKSRC.includes(src)) dirty="來源非登記倉（"+src+"）";
+  else if(!att[1]) dirty="附件不全（"+att[0]+"）";
+  const dark=Math.random()<0.35;
+  S.cur={name:NAMES[Math.random()*NAMES.length|0],
+    item:qty[0]+" "+qty[1]+" 組", qty:qty[1], src:src, att:att[0], dirty, dark};
+  S.no++; S.today++;
+  $("fileNo").textContent="· 第 "+S.no+" 件";
+  $("fName").textContent=S.cur.name;
+  $("fItem").textContent=S.cur.item;
+  $("fSrc").textContent=S.cur.src;
+  $("fAtt").textContent=S.cur.att;
+  $("fDark").style.display=dark?"block":"none";
+  $("truth").style.display="none";
+}
+function meters(){
+  $("vG").textContent=S.garden; $("barG").firstElementChild.style.width=S.garden+"%";
+  $("vP").textContent=S.patrol; $("barP").firstElementChild.style.width=S.patrol+"%";
+  $("vH").textContent=S.heat;  $("barH").firstElementChild.style.width=S.heat+"%";
+  $("vM").textContent=S.money;
+  $("vD").textContent="第 "+S.day+" 天";
+  $("vS").textContent="暗件 "+S.stack+"/8";
+  $("vS").style.color=S.stack>=8?"var(--red)":"";
+}
+function chg(dg,dp,dh,dm,quiet){
+  S.garden=clamp(S.garden+ (dg||0),0,100);
+  S.patrol=clamp(S.patrol+ (dp||0),0,100);
+  S.heat=clamp(S.heat+ (dh||0),0,100);
+  S.money+= (dm||0);
+  meters(); checkOver();
+  if(!quiet&&S.over) return true; return false;
+}
+function checkOver(){
+  if(S.over) return;
+  if(S.heat>=100) return gameOver("收網","識破度 100——巡查方收網，全線崩盤。你留下的是三本對不上的帳。");
+  if(S.garden<=0) return gameOver("放逐","園區信任歸零——園區切割你，你連夜離開，什麼都沒帶走。");
+  if(S.patrol<=0) return gameOver("革職","巡查績效歸零——巡查方查你失職，職位不保，兩邊一起丟。");
+}
+function gameOver(t,d){
+  S.over=true;
+  $("oTitle").textContent="【結局】"+t+"（存活 "+S.day+" 天）";
+  $("oDesc").textContent=d;
+  $("over").classList.remove("hidden");
+}
+function stamp(act){
+  if(S.over||!S.cur) return;
+  const c=S.cur; let t="";
+  if(act==="pass"){
+    S.passed.push(c.dirty);
+    if(c.dirty){
+      let dh=6*(S.up[1]?0.5:1);
+      let dg=8+(c.dark?4:0);
+      t="放行帶病件——園區 +"+dg+"，識破 +"+dh;
+      log(t,c.dark?"gold":"bad");
+      chg(dg,0,dh,0);
+      if(!S.over&&c.dark) log("完美一手：風聲同步漏回園區","gold");
+    }else{
+      t="放行合規件——巡查 +4，園區 +1";
+      log(t,"good"); chg(1,4,0,0);
+    }
+  }else if(act==="hold"){
+    if(c.dirty){ t="扣留帶病件——巡查 +4，園區 -6（擋財路）"; log(t); chg(-6,4,0,0); }
+    else{ t="扣留合規件——巡查 -5（亂扣），園區 -4"; log(t,"bad"); chg(-4,-5,0,0); }
+  }else{ // flag
+    t="標記覆核——兩邊 -1，識破 +1（拖延也是痕跡）";
+    log(t); chg(-1,-1,1,0);
+    if(c.dirty) $("truth").textContent="（覆核發現："+c.dirty+"）",$("truth").style.display="block";
+  }
+  if(S.over) return;
+  if(S.no%5===0) audit();
+  if(!S.over&&S.today>=12) night();
+  else if(!S.over) newFile();
+}
+function audit(){
+  const n=S.up[2]?1:3;
+  const recent=S.passed.slice(-n);
+  S.passed=[];
+  const bad=recent.filter(d=>d).length;
+  if(bad>0){
+    log("⚠ 巡查抽查：最近 "+n+" 件放行中 "+bad+" 件帶病——識破 +15，巡查 -8","bad");
+    chg(0,-8,15,0);
+  }else{
+    log("巡查抽查：放行紀錄乾淨——巡查 +6，識破 -2","good");
+    chg(0,6,-2,0);
+  }
+}
+function night(){
+  S.cur=null;
+  $("nTitle").textContent="夜班結算——第 "+S.day+" 天";
+  const inc=30+S.day*8;
+  $("nIncome").textContent="離線例行文件自動過批：巡查績效 +5，營運金 +"+inc+"（放置收益：主動的 1/8）";
+  S.money+=inc; S.patrol=clamp(S.patrol+5,0,100);
+  S.stack=Math.min(8,S.stack+2);
+  if(S.stack>=8){ S.heat=clamp(S.heat+15,0,100);
+    $("nStack").innerHTML="⚠ 暗件堆滿（8/8）：生塵被嗅到，識破 +15"+(S.heat>=100?"——已收網":"");
+    $("nStack").style.color="var(--red)";
+  } else { $("nStack").textContent="園區暗件堆積："+S.stack+"/8（不管它會生塵）";
+    $("nStack").style.color=""; }
+  $("up1").classList.toggle("disabled",S.up[1]||S.money<300);
+  $("up2").classList.toggle("disabled",S.up[2]||S.money<500);
+  updateNightBtns();
+  meters();
+  if(S.heat>=100){checkOver(); return;}
+  $("night").classList.remove("hidden");
+}
+function updateNightBtns(){
+  $("nBurn").textContent="全數燒毀（"+(80*S.stack)+" 金，園區 -"+(2*S.stack)+"，識破不動）";
+  $("nRpt").textContent="全數交差（+"+(60*S.stack)+" 金，園區 +"+(3*S.stack)+"，識破 +"+(4*S.stack)+"）";
+  $("nBurn").classList.toggle("disabled",S.money<80*S.stack);
+  $("nBurn").style.display=S.stack?"":"none";
+  $("nRpt").style.display=S.stack?"":"none";
+}
+function nightAct(a){
+  if(a==="burn"){ S.money-=80*S.stack; chg(-2*S.stack,0,0,0,true);
+    log("夜班：燒毀 "+S.stack+" 件暗件——園區不高興但帳乾淨"); }
+  if(a==="rpt"){ S.money+=60*S.stack; chg(3*S.stack,0,4*S.stack,0,true);
+    log("夜班：交差 "+S.stack+" 件暗件——園區滿意，帳在變髒"); }
+  if(a==="keep") log("夜班：暗件留著——它會在審計等你");
+  S.stack=0; meters(); updateNightBtns();
+  $("nBurn").style.display="none"; $("nRpt").style.display="none";
+  if(S.heat>=100) checkOver();
+}
+function buy(n){
+  if(n===1&&!S.up[1]&&S.money>=300){S.money-=300;S.up[1]=true;
+    log("購入假章：帶病放行識破減半","gold");$("up1").classList.add("disabled");}
+  if(n===2&&!S.up[2]&&S.money>=500){S.money-=500;S.up[2]=true;
+    log("購入加密線路：抽查只覆核最近 1 件","gold");$("up2").classList.add("disabled");}
+  meters();
+}
+function nextDay(){
+  $("night").classList.add("hidden");
+  S.day++; S.today=0;
+  newFile(); meters();
+}
+document.addEventListener("keydown",e=>{
+  if(e.key==="1")stamp("pass"); if(e.key==="2")stamp("hold"); if(e.key==="3")stamp("flag");
+});
+newFile(); meters();
+log("你是巡查方登記處的審查員，也是園區的眼線。每份檔案，兩個主人都在看。","gold");
+</script>
+</body>
+</html>

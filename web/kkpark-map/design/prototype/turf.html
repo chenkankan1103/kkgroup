@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>勢力地圖 A/B 視覺對照 — 街區棋王探針</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#101318;color:#d7dbe2;font-family:"Microsoft JhengHei",sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  header{padding:10px 16px;border-bottom:1px solid #2a303b;display:flex;gap:14px;align-items:center}
+  header h1{font-size:16px;color:#d4a94e}
+  header button{padding:6px 16px;border-radius:6px;border:1px solid #2a303b;background:#1e232c;color:#d7dbe2;cursor:pointer;font-size:13px}
+  header button.on{border-color:#d4a94e;color:#d4a94e}
+  header .sim{margin-left:auto;display:flex;gap:8px;align-items:center;font-size:13px}
+  main{flex:1;position:relative;overflow:hidden}
+  canvas{width:100%;height:100%;display:block}
+  .legend{position:absolute;bottom:10px;left:12px;font-size:12px;color:#8b93a1;background:rgba(0,0,0,.45);padding:8px 12px;border-radius:8px;line-height:1.7}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  #desc{position:absolute;top:10px;right:12px;width:270px;font-size:12px;color:#8b93a1;background:rgba(0,0,0,.5);padding:10px 14px;border-radius:8px;line-height:1.8}
+  #desc b{color:#d4a94e}
+</style>
+</head>
+<body>
+<header>
+  <h1>勢力地圖 A/B 對照</h1>
+  <button id="btnA" class="on" onclick="setMode('A')">A 格子制</button>
+  <button id="btnB" onclick="setMode('B')">B 街道光環制</button>
+  <div class="sim"><button onclick="pushG()">園區推進</button><button onclick="pushP()">巡查推進</button><span id="dayN">第 1 天</span></div>
+</header>
+<main>
+  <canvas id="cv"></canvas>
+  <div class="legend">
+    <div><i style="background:#d4a94e"></i>園區地盤</div>
+    <div><i style="background:#3a7ab0"></i>巡查方管制</div>
+    <div><i style="background:#4a4f58"></i>中立爭奪區</div>
+    <div style="margin-top:4px;color:#d4a94e">★ 你</div>
+  </div>
+  <div id="desc"></div>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cv=$("cv"),ctx=cv.getContext("2d");
+let W=0,H=0,mode="A",day=1;
+function fit(){W=cv.width=cv.clientWidth*devicePixelRatio;H=cv.height=cv.clientHeight*devicePixelRatio;draw();}
+window.addEventListener("resize",fit);
+
+/* ── 世界資料：20 街區，多邊形（不規則邊界） ── */
+// A 模式：多邊形街區（鄰接拼貼，非正方）
+const DISTRICTS=[
+ // [重心x%,重心y%,控制度-100(藍)..100(金), 邊界抖動種子]
+ [16,14, 70, 1],[38,12,-20, 2],[62,15, 45, 3],[85,13, 60, 4],
+ [13,38, 30, 5],[36,36,  0, 6],[60,38,-45, 7],[84,37, 25, 8],
+ [15,62,-30, 9],[38,60, 15,10],[62,62, 50,11],[86,60, 10,12],
+ [16,86, 40,13],[39,84,-55,14],[63,85, 20,15],[85,84,-15,16],
+];
+const NAMES=["碼頭倉區","北環市集","中心廣場","東關客運","西巷住宅","舊銀行街","教堂北街","車廠後巷",
+             "南門市場","鐵路邊坡","紅燈巷","東橋頭","魚市小街","地下街口","南環工區","派出所前"];
+function ctrlColor(c){ // -100 藍 .. 0 中立 .. 100 金
+  if(c>=0){const t=c/100;return `rgba(${60+t*150},${60+t*70},${40+t*20},`+(0.25+t*0.5)+`)`;}
+  const t=-c/100;return `rgba(${40+t*20},${60+t*55},${60+t*110},`+(0.25+t*0.5)+`)`;}
+function ctrlEdge(c){return c>55?"#d4a94e":c<-55?"#5a9ad0":"#6a7078";}
+
+/* A：不規則多邊形街區 */
+function polyDist(cx,cy,seed,r){
+  const pts=[];const n=7;
+  for(let i=0;i<n;i++){
+    const ang=(i/n)*Math.PI*2+seed*0.7;
+    const rr=r*(0.75+((Math.sin(seed*13.7+i*3.3)+1)/2)*0.5);
+    pts.push([cx+Math.cos(ang)*rr*1.9, cy+Math.sin(ang)*rr]);
+  }
+  return pts;}
+function drawA(){
+  for(let i=0;i<DISTRICTS.length;i++){
+    const dx=DISTRICTS[i][0],dy=DISTRICTS[i][1],cc=DISTRICTS[i][2],ss=DISTRICTS[i][3];
+    const cx=dx/100*W, cy=dy/100*H;
+    const r=Math.min(W,H)*0.085;
+    const pts=polyDist(cx,cy,ss,r);
+    ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let j=1;j<pts.length;j++)ctx.lineTo(pts[j][0],pts[j][1]);
+    ctx.closePath();
+    ctx.fillStyle=ctrlColor(DISTRICTS[i][2]);ctx.fill();
+    ctx.lineWidth=3;ctx.strokeStyle=ctrlEdge(DISTRICTS[i][2]);ctx.stroke();
+    ctx.fillStyle="#cfd4da";ctx.font=`${13*devicePixelRatio}px "Microsoft JhengHei"`;
+    ctx.textAlign="center";
+    ctx.fillText(NAMES[i],cx,cy+4*devicePixelRatio);
+    ctx.fillStyle="#9aa0a8";ctx.font=`${10*devicePixelRatio}px "Microsoft JhengHei"`;
+    ctx.fillText("控制 "+(DISTRICTS[i][2]>0?"+":"")+DISTRICTS[i][2],cx,cy+20*devicePixelRatio);
+  }
+  drawStarsA();
+}
+function drawStarsA(){ // 玩家★在中間街區
+  const dd=DISTRICTS[5],cx=dd[0]/100*W,cy=dd[1]/100*H;
+  star(cx,cy-24*devicePixelRatio,10*devicePixelRatio,"#d4a94e");}
+function star(x,y,r,col){ctx.fillStyle=col;ctx.beginPath();
+  for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r*0.45:r;
+    ctx.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);}ctx.closePath();ctx.fill();}
+
+/* B：連續街道＋控制度光環 */
+const STREETS=[]; // 隨機街道段
+function genStreets(){
+  STREETS.length=0;
+  const nodes=[];
+  for(let i=0;i<26;i++)nodes.push([0.06+Math.random()*0.88, 0.08+Math.random()*0.84]);
+  for(let i=0;i<26;i++){
+    const n=nodes[i];
+    let best=-1,bd=9;
+    for(let j=0;j<26;j++){if(j===i)continue;
+      const dd=(nodes[j][0]-n[0])**2+(nodes[j][1]-n[1])**2;
+      if(dd<bd&&dd>0.004){bd=dd;best=j;}}
+    if(best>=0)STREETS.push([n,nodes[best]]);
+    const k=Math.floor(Math.random()*26);
+    if(k!==i&&(nodes[k][0]-n[0])**2+(nodes[k][1]-n[1])**2<0.05)STREETS.push([n,nodes[k]]);
+  }
+  // 街道控制度
+  for(const s of STREETS)s.ctrl=Math.floor(Math.random()*160-80);
+}
+genStreets();
+function drawB(t){
+  // 底
+  ctx.fillStyle="#15181d";ctx.fillRect(0,0,W,H);
+  // 建築塊
+  ctx.fillStyle="#1d2127";
+  for(let i=0;i<40;i++){const x=(i*97%100)/100*W,y=(i*53%100)/100*H;
+    ctx.fillRect(x,y,W*0.045,H*0.06);}
+  // 街道
+  for(const s of STREETS){
+    const x1=s[0][0]*W,y1=s[0][1]*H,x2=s[1][0]*W,y2=s[1][1]*H;
+    const c=s.ctrl;
+    ctx.strokeStyle=ctrlColor(c);ctx.lineWidth=(10+t*2)*devicePixelRatio*(0.5+Math.abs(c)/160);
+    ctx.lineCap="round";
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    // 光暈
+    ctx.strokeStyle="rgba(255,255,255,0.04)";ctx.lineWidth=(14+t*2)*devicePixelRatio;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  }
+  // 巡邏點（藍點）
+  for(let i=0;i<6;i++){const s=STREETS[(i*7)%STREETS.length];
+    const p=s[Math.floor(i/3)];
+    ctx.fillStyle="#5a9ad0";ctx.beginPath();
+    ctx.arc(p[0]*W,p[1]*H,4*devicePixelRatio,0,7);ctx.fill();}
+  star(0.5*W+Math.cos(t*0.7)*30*devicePixelRatio, 0.5*H+Math.sin(t*0.5)*22*devicePixelRatio,10*devicePixelRatio,"#d4a94e");
+}
+
+let t=0;
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  if(mode==="A"){ctx.fillStyle="#101318";ctx.fillRect(0,0,W,H);drawA();}
+  else drawB(t*0.004);
+  $("desc").innerHTML= mode==="A"
+   ?"<b>A 格子制</b>：20 個不規則街區，色塊即控制度（越金越深＝園區越強）。數字直接標在區內——戰況一眼可讀。放置機＝一格一產出機；怪潮戰鬥以街區為戰場。"
+   :"<b>B 街道光環制</b>：連續道路網，路的粗細＋顏色深淺＝控制度，藍點＝巡邏哨。更像真實城市，但「誰的地盤」要靠光暈濃淡讀——資訊不像 A 那樣一眼懂。";
+}
+function setMode(m){mode=m;
+  $("btnA").classList.toggle("on",m==="A");
+  $("btnB").classList.toggle("on",m==="B");draw();}
+function shift(dv){for(const dd of DISTRICTS)dd[2]=Math.max(-100,Math.min(100,dd[2]+dv*(0.5+Math.random())));
+  if(mode==="A")day++;else{genStreets();for(const s of STREETS)s.ctrl=Math.max(-100,Math.min(100,s.ctrl+dv*2));day++;}
+  $("dayN").textContent="第 "+day+" 天";draw();}
+function pushG(){shift(18)}function pushP(){shift(-18)}
+(function loop(){t++;if(mode==="B")draw();requestAnimationFrame(loop);})();
+fit();
+</script>
+</body>
+</html>

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>雙面線人 v2 — 多開雙帳號灰盒（園區端×巡查端×腳本×硬體）</title>
+<style>
+  :root{
+    --bg:#101318; --panel:#181c23; --panel2:#1e232c; --line:#2a303b;
+    --gold:#d4a94e; --red:#c25450; --teal:#3a9d8f; --gray:#8b93a1; --text:#d7dbe2;
+    --green:#5fbf77;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:"Microsoft JhengHei",sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden;font-size:14px}
+  header{display:flex;gap:12px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .meter{min-width:130px;flex:1}
+  .meter .lab{font-size:11px;color:var(--gray);display:flex;justify-content:space-between}
+  .bar{height:9px;background:#0b0d10;border-radius:5px;overflow:hidden;margin-top:2px}
+  .bar i{display:block;height:100%;transition:width .3s}
+  #barG i{background:var(--gold)} #barP i{background:var(--teal)} #barH i{background:var(--red)}
+  .stat{font-size:16px;color:var(--gold);min-width:80px}
+  .stat small{color:var(--gray);display:block;font-size:10px}
+  main{flex:1;display:flex;gap:10px;padding:10px 14px;min-height:0}
+  .panel{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  .ptitle{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:14px;color:var(--gold)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .pbody{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+  /* 左帳號：園區端 */
+  #runBar{height:14px;background:#0b0d10;border-radius:7px;overflow:hidden;position:relative}
+  #runBar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--gold),#e8c979)}
+  .hire{display:flex;justify-content:space-between;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+  .hire b{font-size:13px} .hire span{font-size:11px;color:var(--gray);display:block}
+  .hire button{padding:5px 12px;border-radius:6px;border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer;font-size:12px}
+  .hire button:disabled{opacity:.35;border-color:var(--line);color:var(--gray);cursor:default}
+  .hired{color:var(--green)!important;border-color:var(--green)!important}
+  #stackBox{background:#241d12;border:1px dashed var(--gold);border-radius:8px;padding:7px 10px;font-size:12px;color:var(--gold)}
+  .float{position:absolute;right:14px;font-size:13px;color:var(--gold);animation:up 1s forwards;pointer-events:none}
+  @keyframes up{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-26px)}}
+  /* 右帳號：巡查端 */
+  #queue{display:flex;gap:6px}
+  .qchip{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 6px;font-size:10px;color:var(--gray);text-align:center;min-height:34px}
+  #curFile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  #curFile h4{font-size:12px;color:var(--gray);font-weight:normal;margin-bottom:5px}
+  .frow{font-size:13px;padding:1px 0}
+  .frow b{color:var(--gray);font-weight:normal;display:inline-block;min-width:64px}
+  .darkB{display:none;margin-top:6px;background:#3a2b18;border:1px solid var(--gold);color:var(--gold);padding:5px 9px;border-radius:6px;font-size:12px}
+  #stamps2{display:flex;gap:8px}
+  #stamps2 button{flex:1;padding:10px 0;font-size:15px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);cursor:pointer}
+  #sPass{background:#1c3a35;border-color:var(--teal);color:#7fd6c9}
+  #sHold{background:#3a1f1e;border-color:var(--red);color:#e39a96}
+  #sFlag{background:#242830;color:var(--text)}
+  .rule{display:flex;gap:6px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px}
+  .rule select{background:#0e1013;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:3px;font-size:12px}
+  .rule .tag{color:var(--teal);font-size:11px;min-width:44px}
+  .rule input{accent-color:var(--teal)}
+  #ticker{background:#0b0d10;border-radius:8px;padding:7px 10px;font-size:11px;height:92px;overflow:hidden}
+  #ticker p{color:var(--gray);padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #ticker .g{color:var(--teal)} #ticker .r{color:var(--red)} #ticker .y{color:var(--gold)}
+  /* 硬體欄 */
+  #rig{display:flex;gap:8px;padding:8px 14px;border-top:1px solid var(--line)}
+  .slot{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px;text-align:center;min-width:0}
+  .slot .ic{font-size:18px} .slot b{font-size:11px;display:block} .slot span{font-size:10px;color:var(--gray);display:block;margin:2px 0}
+  .slot button{width:100%;padding:4px 0;border-radius:5px;border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer;font-size:11px}
+  .slot button:disabled{opacity:.35;border-color:var(--line);color:var(--gray);cursor:default}
+  .own{border-color:var(--green)!important} .own button{display:none}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:9}
+  .hidden{display:none!important}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 26px;width:min(540px,92vw);max-height:86vh;overflow:auto}
+  .box h2{color:var(--gold);font-size:18px;margin-bottom:10px}
+  .box p{font-size:13px;margin:5px 0}
+  .box button{margin:8px 8px 0 0;padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;font-size:13px}
+  .box button.buy{border-color:var(--gold);color:var(--gold)}
+  .box button:disabled{opacity:.4;cursor:default}
+  .k{color:var(--gray)} .warn{color:var(--red)}
+</style>
+</head>
+<body>
+<header>
+  <div class="meter"><div class="lab"><span>園區信任</span><span id="vG">50</span></div><div class="bar" id="barG"><i></i></div></div>
+  <div class="meter"><div class="lab"><span>巡查績效</span><span id="vP">50</span></div><div class="bar" id="barP"><i></i></div></div>
+  <div class="meter"><div class="lab"><span>識破度</span><span id="vH">0</span></div><div class="bar" id="barH"><i></i></div></div>
+  <div class="stat"><span id="vM">200</span><small>營運金</small></div>
+  <div class="stat"><span id="vD">第 1 天</span><small id="vS">暗件 0/8</small></div>
+</header>
+
+<main>
+  <!-- 帳號 A：園區端（放置） -->
+  <section class="panel">
+    <div class="ptitle"><span class="dot"></span>帳號 A · 園區端（掛機運轉中）</div>
+    <div class="pbody" style="position:relative" id="leftBody">
+      <div>
+        <div class="lab" style="font-size:11px;color:var(--gray);display:flex;justify-content:space-between"><span>跑單進度</span><span id="runTxt">每單 +5 金</span></div>
+        <div id="runBar"><i></i></div>
+      </div>
+      <div class="hire"><div><b>車手</b><span>150 金 · 每單 +3 金</span></div><button onclick="hire(0)">雇</button></div>
+      <div class="hire"><div><b>包裝手</b><span>300 金 · 跑單快 0.8s</span></div><button onclick="hire(1)">雇</button></div>
+      <div class="hire"><div><b>暗線</b><span>600 金 · 每晚自動燒 1 暗件</span></div><button onclick="hire(2)">雇</button></div>
+      <div class="hire"><div><b>會計</b><span>500 金 · 交差識破 -2/件</span></div><button onclick="hire(3)">雇</button></div>
+      <div id="stackBox">園區暗件：<span id="stackN">0</span>/8 —— 皺摺會生塵，每晚處理</div>
+      <p class="k" style="font-size:11px">這個帳號自己會賺錢。你的本體在右邊。</p>
+    </div>
+  </section>
+
+  <!-- 帳號 B：巡查端（主動） -->
+  <section class="panel" style="flex:1.35">
+    <div class="ptitle"><span class="dot" style="background:var(--teal)"></span>帳號 B · 巡查端（審查桌）</div>
+    <div class="pbody">
+      <div id="queue"></div>
+      <div id="curFile">
+        <h4>目前檔案 <span id="fNo"></span></h4>
+        <div class="frow"><b>申請人</b><span id="fName"></span></div>
+        <div class="frow"><b>貨品數量</b><span id="fItem"></span></div>
+        <div class="frow"><b>來源</b><span id="fSrc"></span></div>
+        <div class="frow"><b>附件</b><span id="fAtt"></span></div>
+        <div class="darkB" id="fDark">⚠ 園區暗記：此件需過（厚賞，只能手動）</div>
+      </div>
+      <div id="stamps2">
+        <button id="sPass" onclick="stamp('pass')">放行 [1]</button>
+        <button id="sHold" onclick="stamp('hold')">扣留 [2]</button>
+        <button id="sFlag" onclick="stamp('flag')">標記 [3]</button>
+      </div>
+      <div>
+        <div class="lab" style="font-size:11px;color:var(--gray);margin-bottom:4px">腳本槽（IF 條件 THEN 動作）——例行件自動跑，暗記件不進腳本</div>
+        <div id="rules"></div>
+      </div>
+      <div id="ticker"></div>
+    </div>
+  </section>
+</main>
+
+<!-- 硬體欄 -->
+<div id="rig">
+  <div class="slot" id="g0"><div class="ic">☕</div><b>咖啡機</b><span>200 · 檔案變慢</span><button onclick="gear(0)">買</button></div>
+  <div class="slot" id="g1"><div class="ic">🗞</div><b>碎紙機</b><span>300 · 燒暗件免錢</span><button onclick="gear(1)">買</button></div>
+  <div class="slot" id="g2"><div class="ic">🔖</div><b>假章</b><span>300 · 識破減半</span><button onclick="gear(2)">買</button></div>
+  <div class="slot" id="g3"><div class="ic">🖥</div><b>第二螢幕</b><span>400 · 腳本槽 +1</span><button onclick="gear(3)">買</button></div>
+  <div class="slot" id="g4"><div class="ic">🔐</div><b>加密線路</b><span>500 · 抽查看 1 件</span><button onclick="gear(4)">買</button></div>
+  <div class="slot" id="g5"><div class="ic">📌</div><b>告示板</b><span>350 · 暗記 +12%</span><button onclick="gear(5)">買</button></div>
+</div>
+
+<!-- 夜班 -->
+<div class="modal hidden" id="night">
+  <div class="box">
+    <h2 id="nT">夜班結算</h2>
+    <p id="nInc"></p><p id="nStack"></p>
+    <p class="k">暗件處理：</p>
+    <button class="buy" id="nBurn" onclick="nightAct('burn')">全燒</button>
+    <button class="buy" id="nRpt" onclick="nightAct('rpt')">全交差</button>
+    <button onclick="nightAct('keep')">留著</button>
+    <p class="k" style="margin-top:10px">左帳號明日開機自動續跑。硬體與下線隨時可買。</p>
+    <button id="nGo" onclick="nextDay()">開始第 2 天 →</button>
+  </div>
+</div>
+<div class="modal hidden" id="over">
+  <div class="box"><h2 id="oT"></h2><p id="oD"></p><button onclick="location.reload()">再來一局</button></div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const S={garden:50,patrol:50,heat:0,money:200,day:1,no:0,stack:0,
+  hires:[false,false,false,false],gears:[false,false,false,false,false,false],
+  rules:[{c:"",a:"",on:false},{c:"",a:"",on:false},{c:"",a:"",on:false}],
+  passed:[],queue:[],arr:12,runW:0,over:false,paused:false};
+const NAMES=["陳先生","林小姐","王先生","黃先生","張小姐","吳先生","劉先生","蔡小姐"];
+const ITEMS=[["茶葉禮盒",40],["電子零件",90],["保養品",60],["五金工具",25],["保健食品",80],["手工點心",95]];
+const SRCS=["南門倉","港區物流","北貨站","第七倉","中央批發"];
+const OKSRC=["南門倉","北貨站","中央批發"];
+const ATTS=[["齊全",true],["齊全",true],["缺出貨單",false],["缺封條編號",false]];
+const HIRES=[{n:"車手",c:150},{n:"包裝手",c:300},{n:"暗線",c:600},{n:"會計",c:500}];
+const GEARS=[{n:"咖啡機",c:200},{n:"碎紙機",c:300},{n:"假章",c:300},{n:"第二螢幕",c:400},{n:"加密線路",c:500},{n:"告示板",c:350}];
+const CONDS=[["","（空）"],["att","附件缺"],["src","來源非登記倉"],["qty","數量超限"],["any","全部件"]];
+const ACTS=[["","（空）"],["pass","自動放行"],["hold","自動扣留"],["flag","自動標記"]];
+
+function tick(t,cls){const p=document.createElement("p");if(cls)p.className=cls;
+  p.textContent=t;const tk=$("ticker");tk.prepend(p);while(tk.children.length>9)tk.lastChild.remove();}
+function floatL(txt){const s=document.createElement("span");s.className="float";s.textContent=txt;
+  s.style.top=(30+Math.random()*60)+"px";$("leftBody").appendChild(s);setTimeout(()=>s.remove(),1000);}
+function meters(){
+  $("vG").textContent=S.garden;$("barG").firstElementChild.style.width=S.garden+"%";
+  $("vP").textContent=S.patrol;$("barP").firstElementChild.style.width=S.patrol+"%";
+  $("vH").textContent=S.heat;$("barH").firstElementChild.style.width=S.heat+"%";
+  $("vM").textContent=S.money;$("vD").textContent="第 "+S.day+" 天";
+  $("vS").textContent="暗件 "+S.stack+"/8";$("vS").style.color=S.stack>=8?"var(--red)":"";
+  $("stackN").textContent=S.stack;
+}
+function chg(dg,dp,dh,dm){
+  S.garden=clamp(S.garden+(dg||0),0,100);S.patrol=clamp(S.patrol+(dp||0),0,100);
+  S.heat=clamp(S.heat+(dh||0),0,100);S.money+=(dm||0);meters();checkOver();}
+function checkOver(){
+  if(S.over)return;
+  if(S.heat>=100)return gameOver("收網","識破度 100——巡查方收網，兩個帳號一起凍結。");
+  if(S.garden<=0)return gameOver("放逐","園區信任歸零——園區切割你，左帳號註銷。");
+  if(S.patrol<=0)return gameOver("革職","巡查績效歸零——右帳號被拔，兩邊一起丟。");}
+function gameOver(t,d){S.over=true;S.paused=true;
+  $("oT").textContent="【結局】"+t+"（存活 "+S.day+" 天）";$("oD").textContent=d;
+  $("over").classList.remove("hidden");}
+function dirtyOf(f){if(f.qty>100)return"數量超限";if(!OKSRC.includes(f.src))return"來源非登記倉";if(!f.attOK)return"附件缺";return null;}
+function matchCond(c,f){if(c==="any")return true;if(c==="att")return!f.attOK;
+  if(c==="src")return!OKSRC.includes(f.src);if(c==="qty")return f.qty>100;return false;}
+function renderRules(){
+  const box=$("rules");box.innerHTML="";
+  const n=S.gears[3]?4:3;
+  for(let i=0;i<n;i++){
+    const r=S.rules[i];const d=document.createElement("div");d.className="rule";
+    d.innerHTML='<span class="tag">腳本'+(i+1)+'</span>'+
+      sel("c",i,CONDS,r.c)+sel("a",i,ACTS,r.a)+
+      '<label><input type="checkbox" '+(r.on?"checked":"")+' onchange="tog('+i+',this.checked)"> 運轉</label>';
+    box.appendChild(d);}
+}
+function sel(k,i,opts,val){let h='<select onchange="setRule('+i+',\''+k+'\',this.value)">';
+  for(const o of opts)h+='<option value="'+o[0]+'"'+(o[0]===val?" selected":"")+'>'+o[1]+'</option>';
+  return h+'</select>';}
+function setRule(i,k,v){S.rules[i][k]=v;}
+function tog(i,on){S.rules[i].on=on;if(on)tick("腳本"+(i+1)+" 開始運轉","g");}
+function renderQueue(){
+  const q=$("queue");q.innerHTML="";
+  for(let i=0;i<5;i++){const d=document.createElement("div");d.className="qchip";
+    const f=S.queue[i];
+    d.textContent=f?(f.item.split(" ")[1]+"組 · "+f.src.slice(0,2)+" · "+(f.attOK?"齊":"缺")+(f.dark?" ⚠":"")):"（空）";
+    q.appendChild(d);}
+}
+function cur(){return S.queue[0]||null;}
+function renderCur(){
+  const f=cur();
+  if(!f){$("fNo").textContent="· 佇列空，等新件進來…";
+    $("fName").textContent="—";$("fItem").textContent="—";$("fSrc").textContent="—";$("fAtt").textContent="—";
+    $("fDark").style.display="none";return;}
+  $("fNo").textContent="· 第 "+f.no+" 件"+(f.aged?"（快逾期！）":"");
+  $("fName").textContent=f.name;$("fItem").textContent=f.item;
+  $("fSrc").textContent=f.src;$("fAtt").textContent=f.att;
+  $("fDark").style.display=f.dark?"block":"none";
+}
+function newFile(){
+  const qty=ITEMS[Math.random()*ITEMS.length|0],src=SRCS[Math.random()*SRCS.length|0],att=ATTS[Math.random()*ATTS.length|0];
+  S.no++;S.arr--;
+  const dark=Math.random()<(S.gears[5]?0.47:0.35);
+  const f={no:S.no,name:NAMES[Math.random()*NAMES.length|0],item:qty[0]+" "+qty[1]+" 組",
+    qty:qty[1],src:src,att:att[0],attOK:att[1],dark,aged:false};
+  // 腳本自動化：暗記件永不進腳本
+  if(!f.dark){
+    for(let i=0;i<S.rules.length;i++){const r=S.rules[i];
+      if(r.on&&r.c&&r.a&&matchCond(r.c,f)){scriptRun(i,r.a,f);return;}}
+  }
+  S.queue.push(f);
+  if(S.queue.length>5){const old=S.queue.shift();
+    tick("檔案 #"+old.no+" 逾期——巡查 -3","r");chg(0,-3,0,0);}
+  renderQueue();renderCur();
+}
+function scriptRun(i,act,f){
+  const d=dirtyOf(f);const n=i+1;
+  if(act==="pass"){S.passed.push(!!d);
+    if(d){const dh=4*(S.gears[2]?0.5:1);tick("[腳本"+n+"] 自動放行帶病 #"+f.no+"（"+d+"）——識破+"+dh,"r");chg(5,0,dh,0);}
+    else{tick("[腳本"+n+"] 自動放行 #"+f.no+" ——巡查+3","g");chg(0,3,0,0);}
+  }else if(act==="hold"){
+    if(d){tick("[腳本"+n+"] 自動扣留 #"+f.no+"（"+d+"）——巡查+3 園區-3","g");chg(-3,3,0,0);}
+    else{tick("[腳本"+n+"] 自動扣留合規 #"+f.no+"——巡查-4 園區-2","r");chg(-2,-4,0,0);}
+  }else{tick("[腳本"+n+"] 自動標記 #"+f.no+"——兩邊-1","");chg(-1,-1,1,0);}
+  afterProc();
+}
+function stamp(act){
+  if(S.over||S.paused)return;const f=cur();if(!f)return;
+  const d=dirtyOf(f);
+  if(act==="pass"){S.passed.push(!!d);
+    if(d){const dh=6*(S.gears[2]?0.5:1),dg=8+(f.dark?4:0);
+      tick("手動放行 #"+f.no+"（"+d+"）——園區+"+dg+" 識破+"+dh,f.dark?"y":"r");chg(dg,0,dh,0);
+      if(!S.over&&f.dark)tick("完美一手：風聲同步漏回園區","y");}
+    else{tick("手動放行 #"+f.no+" 合規——巡查+4 園區+1","g");chg(1,4,0,0);}
+  }else if(act==="hold"){
+    if(d){tick("手動扣留 #"+f.no+"（"+d+"）——巡查+4 園區-6","g");chg(-6,4,0,0);}
+    else{tick("手動扣留 #"+f.no+" 合規——巡查-5 園區-4","r");chg(-4,-5,0,0);}
+  }else{tick("手動標記 #"+f.no+"——兩邊-1 識破+1","");chg(-1,-1,1,0);}
+  S.queue.shift();renderQueue();afterProc();
+}
+function afterProc(){
+  if(S.over)return;
+  if(S.no%5===0)audit();
+  if(!S.over&&S.arr<=0&&S.queue.length===0)night();
+  else{renderCur();}
+}
+function audit(){
+  const n=S.gears[4]?1:3;const recent=S.passed.slice(-n);S.passed=[];
+  const bad=recent.filter(Boolean).length;
+  if(bad>0){tick("⚠ 巡查抽查：最近"+n+"件放行 "+bad+" 件帶病——識破+15 巡查-8","r");chg(0,-8,15,0);}
+  else{tick("巡查抽查乾淨——巡查+6 識破-2","g");chg(0,6,-2,0);}
+}
+function night(){
+  S.paused=true;
+  $("nT").textContent="夜班結算——第 "+S.day+" 天";
+  const inc=30+S.day*8;S.money+=inc;S.patrol=clamp(S.patrol+5,0,100);
+  let autoBurn=S.hires[2]?1:0;
+  if(autoBurn&&S.stack>0){S.stack--;tick("暗線自動燒毀 1 件暗件","g");}
+  S.stack=Math.min(8,S.stack+2);
+  if(S.stack>=8){S.heat=clamp(S.heat+15,0,100);
+    $("nStack").innerHTML='<span class="warn">⚠ 暗件堆滿：生塵被嗅到，識破 +15</span>';}
+  else $("nStack").textContent="暗件堆積："+S.stack+"/8";
+  $("nInc").textContent="左帳號離線跑單 +"+inc+" 金、例行文件 巡查+5（放置收益＝主動的 1/8）";
+  updateN();meters();
+  if(S.heat>=100){S.paused=false;checkOver();return;}
+  $("night").classList.remove("hidden");
+}
+function updateN(){
+  const cost=S.gears[1]?0:80*S.stack;
+  $("nBurn").textContent="全燒（"+(cost?cost+" 金":"免費：碎紙機")+"，園區-"+2*S.stack+"）";
+  const dh=S.hires[3]?2:4;
+  $("nRpt").textContent="全交差（+"+60*S.stack+" 金，園區+"+3*S.stack+"，識破+"+dh*S.stack+"）";
+  $("nBurn").disabled=S.money<cost||!S.stack;
+  $("nRpt").disabled=!S.stack;
+}
+function nightAct(a){
+  if(a==="burn"){const cost=S.gears[1]?0:80*S.stack;S.money-=cost;chg(-2*S.stack,0,0,0,true);
+    tick("夜班燒毀 "+S.stack+" 件暗件");}
+  if(a==="rpt"){S.money+=60*S.stack;const dh=S.hires[3]?2:4;
+    chg(3*S.stack,0,dh*S.stack,0,true);tick("夜班交差 "+S.stack+" 件——帳在變髒");}
+  if(a==="keep")tick("暗件留著——審計見");
+  S.stack=0;meters();updateN();$("nBurn").style.display="none";$("nRpt").style.display="none";
+  if(S.heat>=100)checkOver();
+}
+function nextDay(){
+  $("night").classList.add("hidden");
+  S.day++;S.arr=12;S.paused=false;
+  $("nBurn").style.display="";$("nRpt").style.display="";
+  meters();tick("—— 第 "+S.day+" 天開機，左帳號自動續跑 ——","y");
+}
+function hire(i){
+  if(S.hires[i]||S.money<HIRES[i].c)return;
+  S.money-=HIRES[i].c;S.hires[i]=true;
+  document.querySelectorAll(".hire")[i].classList.add("hired");
+  document.querySelectorAll(".hire")[i].querySelector("button").textContent="已雇";
+  document.querySelectorAll(".hire")[i].querySelector("button").disabled=true;
+  if(i===0)$("runTxt").textContent="每單 +8 金";
+  if(i===1)runIv=2200;
+  tick("雇了"+HIRES[i].n+"——左帳號升級","y");meters();
+}
+function gear(i){
+  if(S.gears[i]||S.money<GEARS[i].c)return;
+  S.money-=GEARS[i].c;S.gears[i]=true;
+  const el=$("g"+i);el.classList.add("own");el.querySelector("button").textContent="✓";
+  if(i===0){spawnIv=4400;resetSpawn();}
+  if(i===3)renderRules();
+  tick("裝機："+GEARS[i].n,"y");meters();
+}
+// 跑單掛機迴圈
+let runIv=3000,spawnIv=3600;
+setInterval(()=>{ // 跑單進度
+  if(S.paused||S.over)return;
+  S.runW+=10000/runIv; // 每 100ms tick，runIv ms 走完一單
+  if(S.runW>=100){S.runW=0;
+    const inc=5+(S.hires[0]?3:0);
+    S.money+=inc;floatL("+"+inc);meters();}
+  $("runBar").firstElementChild.style.width=S.runW+"%";
+},100);
+let spawnT=setInterval(()=>{if(S.paused||S.over)return;if(S.arr>0)newFile();},spawnIv);
+function resetSpawn(){clearInterval(spawnT);
+  spawnT=setInterval(()=>{if(S.paused||S.over)return;if(S.arr>0)newFile();},spawnIv);}
+document.addEventListener("keydown",e=>{
+  if(e.key==="1")stamp("pass");if(e.key==="2")stamp("hold");if(e.key==="3")stamp("flag");});
+// 開機
+renderRules();renderQueue();renderCur();meters();
+tick("雙帳號上線。左邊自己會賺，右邊等你的章。","y");
+tick("提示：把例行判斷寫進腳本槽，暗記件永遠只能手動。","g");
+</script>
+</body>
+</html>
