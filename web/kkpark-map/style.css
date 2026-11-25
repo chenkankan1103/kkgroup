@@ -373,9 +373,23 @@ button.pick:hover { border-color: var(--pink); }
 .intro-tips b { color: var(--txt); }
 .intro-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .intro-btns .ev-btn { flex: 1; }
-/* V3.4：Discord 登入（次按鈕，不搶主流程） */
-.ev-btn.dc-login { border-color: #5865F2; color: #aab2ff; font-size: 13px; flex-basis: 100%; }
+/* V3.4：Discord 登入（次按鈕，不搶主流程）；V0.5.5：＋加入 DC 群邀請 */
+.ev-btn.dc-login { border-color: #5865F2; color: #aab2ff; font-size: 13px; }
 .ev-btn.dc-login:hover { box-shadow: 0 0 12px rgba(88, 101, 242, 0.4); }
+.ev-btn.dc-join { border-color: #5865F2; color: #fff; background: #5865F2; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.ev-btn.dc-join:hover { box-shadow: 0 0 14px rgba(88, 101, 242, 0.6); }
+.intro-dc-row { display: flex; gap: 8px; flex-basis: 100%; }
+.intro-dc-row .ev-btn { flex: 1; }
+/* V0.5.5：HUD 常駐 DC 邀請鈕 */
+.hud-dc {
+  font-size: 12px; font-weight: 700; text-decoration: none;
+  color: #fff; background: #5865F2; border: 1px solid #5865F2;
+  border-radius: 8px; padding: 5px 9px; align-self: center;
+  white-space: nowrap;
+}
+.hud-dc:hover { box-shadow: 0 0 12px rgba(88, 101, 242, 0.55); }
+#endingModal .modal.ending { display: flex; flex-direction: column; gap: 8px; }
+#endingModal .ev-btn { flex-basis: auto; }
 
 .howto-steps { margin: 4px 0 14px; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
 .howto-steps li { font-size: 13.5px; color: var(--dim); line-height: 1.55; }

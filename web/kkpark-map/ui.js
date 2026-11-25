@@ -97,6 +97,11 @@ const UI = (() => {
     $('btnMisClose').onclick = () => $('misPanel').classList.add('hidden');
     $('btnHelp').onclick = showHow;
     $('btnHowClose').onclick = hideHow;
+    // V0.5.5：DC 群邀請連結（開場＋HUD 同一條無限期 invite）
+    for (const id of ['btnDcInvite', 'hudDc']) {
+      const a = $(id);
+      if (a) { a.href = DC_INVITE; a.title = DC_INVITE_TEXT; }
+    }
   }
 
   function enterGame() {
@@ -588,6 +593,20 @@ const UI = (() => {
     const caughtN = S.members.reduce((s, m) => s + m.caught, 0);
     $('endStats').innerHTML =
       `<span>撐了 <b>${S.day}</b> 天</span><span>身家 $${S.money.toLocaleString()}</span><span>成員被逮 <b>${caughtN}</b> 次</span>`;
+    // V0.5.5 戰績分享卡：一鍵複製 → 貼 DC 群自傳播（含邀請連結）
+    const shareTxt =
+      `🏴 KK 園區：雙面線人｜${e.title} ${e.win ? '（勝利）' : ''}\n` +
+      `撐了 ${S.day} 天・身家 $${S.money.toLocaleString()}・被逮 ${caughtN} 次` +
+      `${Avatar.myDiscordId() ? '・ID 尾碼 ' + Avatar.myDiscordId().slice(-4) : ''}\n` +
+      `你也來臥底一波：${DC_INVITE}`;
+    const btnShare = $('btnShare');
+    btnShare.textContent = '📋 複製戰績';
+    btnShare.onclick = () => {
+      const done = () => { btnShare.textContent = '✓ 已複製，貼去 DC 群炫'; setTimeout(() => { btnShare.textContent = '📋 複製戰績'; }, 2500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareTxt).then(done).catch(() => fallbackCopy(shareTxt, done));
+      } else fallbackCopy(shareTxt, done);
+    };
     $('endingModal').classList.remove('hidden');
     $('btnRestart').onclick = () => {
       $('endingModal').classList.add('hidden');
@@ -595,6 +614,18 @@ const UI = (() => {
       renderAll();
       GameMap.flyTo(HQ.lat, HQ.lng, 12);
     };
+  }
+
+  // clipboard API 不可用（http/舊瀏覽器）時的複製後備
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { showToast({ icon: '⚠️', text: '複製失敗，請手動選取' }); }
+    ta.remove();
   }
 
   /* ===== Toast ===== */
