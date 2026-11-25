@@ -7,7 +7,7 @@
 
 import os
 import requests as req_lib
-from flask import Flask, jsonify, request, send_from_directory, Response
+from flask import Flask, jsonify, request, send_from_directory, Response, redirect
 from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -330,28 +330,20 @@ def api_db_stats():
 # ============================================================
 
 
-@app.route("/rpg-game", methods=["GET"])
-@app.route("/rpg-game.html", methods=["GET"])
-def serve_rpg_game():
-    """提供紙娃娃 RPG 遊戲頁面"""
-    rpg_game_path = os.path.join(WEB_PORTAL_FOLDER, "rpg-game.html")
-    logger.info(f"嘗試加載遊戲頁面: {rpg_game_path}")
-    logger.info(f"文件存在: {os.path.exists(rpg_game_path)}")
-    if os.path.exists(rpg_game_path):
-        with open(rpg_game_path, "r", encoding="utf-8") as f:
-            return f.read(), 200, {"Content-Type": "text/html; charset=utf-8"}
-    return jsonify({"error": "遊戲頁面不存在", "path": rpg_game_path}), 404
+MAP_FOLDER = os.path.abspath(os.path.join(BASE_DIR, "..", "kkpark-map"))
 
 
 @app.route("/game.html", methods=["GET"])
-@app.route("/game", methods=["GET"])
-def serve_game():
-    """提供遊戲首頁（指向紙娃娃 RPG）"""
-    game_path = os.path.join(WEB_PORTAL_FOLDER, "rpg-game.html")
-    if os.path.exists(game_path):
-        with open(game_path, "r", encoding="utf-8") as f:
-            return f.read(), 200, {"Content-Type": "text/html; charset=utf-8"}
-    return jsonify({"error": "遊戲首頁不存在"}), 404
+def serve_game_html():
+    """提供遊戲首頁（雙面線人 map），轉址到 /game/ 讓相對路徑資產正確解析"""
+    return redirect("/game/")
+
+
+@app.route("/game/", methods=["GET"])
+@app.route("/game/<path:asset>")
+def serve_game(asset="index.html"):
+    """供應 kkpark-map 靜態檔（index.html、style.css、data.js 等）"""
+    return send_from_directory(MAP_FOLDER, asset)
 
 
 @app.route("/admin", methods=["GET"])
@@ -582,11 +574,9 @@ if __name__ == "__main__":
     print("   ✅ 用戶管理 API    (/api/user/...)")
     print("   ✅ 系統監控       (/api/health)")
     print("   ✅ GitHub Webhook  (/webhook/github - 自動部署)")
-    print("   ✅ 網頁遊戲       (/rpg-game 或 /game.html)")
+    print("   ✅ 網頁遊戲       (/game)")
     print("🎮 遊戲網址:")
-    print(f"   • http://{host}:{port}/rpg-game")
-    print(f"   • http://{host}:{port}/rpg-game.html")
-    print(f"   • http://{host}:{port}/game.html")
+    print(f"   • http://{host}:{port}/game")
     print(f"{'='*60}\n")
 
     app.run(host=host, port=port, debug=debug_mode, threaded=True)

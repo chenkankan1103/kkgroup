@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - 'web/kkpark/**'
       - 'web/kkpark-game/**'
       - 'web/kkpark-map/**'
       - '.github/workflows/deploy-pages.yml'
@@ -30,14 +29,14 @@ jobs:
         uses: actions/configure-pages@v5
 
       # 一個 repo 只能有一個 Pages 站，所以兩個前端合成同一份 artifact：
-      # 首頁放根目錄，遊戲掛在 /game/。遊戲內部全用相對路徑（style.css、
-      # data.js、game.js），搬進子目錄不會壞掉。
+      # 首頁放根目錄（雙面線人 map），生存街機掛在 /game/。
+      # 兩個遊戲內部全用相對路徑（style.css、data.js、game.js），
+      # 搬進根目錄或子目錄都不會壞掉。
       - name: 組出要發佈的網站
         run: |
-          mkdir -p _site/game _site/map
-          cp -r web/kkpark/. _site/
+          mkdir -p _site/game
+          cp -r web/kkpark-map/. _site/
           cp -r web/kkpark-game/. _site/game/
-          cp -r web/kkpark-map/. _site/map/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

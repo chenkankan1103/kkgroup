@@ -178,10 +178,10 @@ def oauth_callback():
             redirect_url = f"{state}{sep}auth_token={session_token}&user_id={user_data.get('id')}"
         # 檢查是否是遊戲的登入（通過 referrer 或固定目標）
         elif request.referrer and (
-            "/rpg-game" in request.referrer or "/game" in request.referrer
+            "/game" in request.referrer
         ):
             redirect_url = (
-                f"/rpg-game?auth_token={session_token}&user_id={user_data.get('id')}"
+                f"/game?auth_token={session_token}&user_id={user_data.get('id')}"
             )
         # 檢查是否是管理後台的登入
         elif request.referrer and "/admin" in request.referrer:
