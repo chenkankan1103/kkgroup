@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KK 園區倖存者</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="hud-row">
+    <span class="chip" id="hudHp">100/100</span>
+    <span class="chip" id="hudTime">0:00</span>
+    <span class="chip" id="hudLevel">Lv.1</span>
+    <span class="chip" id="hudKills">0</span>
+    <span class="chip" id="hudWave">第 1 波</span>
+    <a class="chip dc" id="hudDc" href="https://discord.gg/BTggYYFVf8" target="_blank" rel="noopener">💬 DC</a>
+  </div>
+  <div id="gearList"></div>
+</div>
+
+<!-- 開場 -->
+<div id="menu" class="overlay">
+  <div class="modal">
+    <h1>KK 園區倖存者</h1>
+    <p class="sub">楓之谷皮・POE 掉落骨・倖存者玩法</p>
+    <ul class="tips">
+      <li>WASD／方向鍵走位，彈幕自動開火</li>
+      <li>怪掉裝備：<b class="c-normal">白</b>／<b class="c-magic">藍</b>／<b class="c-rare">黃</b>光柱，撿了直接生效</li>
+      <li>升級三選一，撐住波次</li>
+    </ul>
+    <button id="btnStart" class="btn main" disabled>載入造型中…</button>
+    <p class="hint" id="menuHint"></p>
+    <a class="btn dc" href="https://discord.gg/BTggYYFVf8" target="_blank" rel="noopener">📱 加入 DC 群</a>
+  </div>
+</div>
+
+<!-- 升級三選一 -->
+<div id="levelup" class="overlay hidden">
+  <div class="modal">
+    <h2>升級！挑一個</h2>
+    <div id="lvChoices" class="lv-grid"></div>
+  </div>
+</div>
+
+<!-- 結局 -->
+<div id="gameover" class="overlay hidden">
+  <div class="modal">
+    <h2>倒下了</h2>
+    <div id="goStats" class="end-stats"></div>
+    <p id="goGear" class="go-gear"></p>
+    <button id="btnShare" class="btn dc" style="width:100%">📋 複製戰績</button>
+    <button id="btnRetry" class="btn main" style="width:100%">🔁 再割一次</button>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="npc_looks.js"></script>
+<script src="engine.js"></script>
+<script src="player.js"></script>
+<script src="loot.js"></script>
+<script src="mobs.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

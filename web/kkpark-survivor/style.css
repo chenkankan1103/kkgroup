@@ -1,0 +1,75 @@
+/* style.css — 倖存者殼層樣式：石墨底＋琥珀主色（跟 kkpark 系一致） */
+:root {
+  color-scheme: dark;
+  --bg: #101418; --panel: #1a1f26; --line: #2c3440;
+  --fg: #eceef1; --dim: #98a2ae;
+  --gold: #ffd35c; --pink: #ff5ec4; --cyan: #5ee0ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
+  font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+#game { position: fixed; inset: 0; display: block; }
+#game.hitflash { filter: brightness(1.6) saturate(1.4); }
+
+.hidden { display: none !important; }
+
+/* HUD */
+#hud { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; z-index: 5; }
+.hud-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  background: rgb(16 20 24 / .82); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px 9px; font-size: 13px; font-weight: 700;
+}
+.chip.dc { pointer-events: auto; text-decoration: none; color: #fff; background: #5865F2; border-color: #5865F2; }
+#gearList { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; max-width: 320px; }
+.gear-item {
+  background: rgb(16 20 24 / .82); border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: 6px; padding: 4px 8px; font-size: 11.5px; display: flex; flex-direction: column;
+}
+.gear-item span { color: var(--dim); }
+
+/* Overlay */
+.overlay {
+  position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: rgb(10 12 15 / .8);
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px 26px; max-width: 430px; width: min(92vw, 430px); text-align: center;
+}
+.modal h1 { margin: 0 0 4px; font-size: 22px; }
+.modal h2 { margin: 0 0 12px; }
+.modal .sub { color: var(--dim); font-size: 12px; margin: 0 0 12px; }
+.tips { list-style: none; padding: 0; margin: 0 0 16px; color: var(--dim); font-size: 13px; line-height: 1.8; text-align: left; }
+.tips b { font-weight: 700; }
+.c-normal { color: #cfd6de; } .c-magic { color: #7fb3ff; } .c-rare { color: #ffd35c; }
+.hint { color: var(--dim); font-size: 11px; margin: 8px 0 0; }
+
+.btn {
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 16px; text-decoration: none; display: inline-block;
+}
+.btn.main { border-color: var(--gold); color: var(--gold); }
+.btn.main:hover { box-shadow: 0 0 14px rgb(255 211 92 / .35); }
+.btn.main:disabled { opacity: .5; cursor: wait; }
+.btn.dc { border-color: #5865F2; color: #fff; background: #5865F2; margin-top: 10px; }
+.btn.dc:hover { box-shadow: 0 0 14px rgb(88 101 242 / .55); }
+
+/* 升級 */
+.lv-grid { display: flex; flex-direction: column; gap: 8px; }
+.lv-btn {
+  font-family: inherit; text-align: left; cursor: pointer;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.lv-btn:hover { border-color: var(--gold); }
+.lv-btn b { font-size: 14px; }
+.lv-btn span { color: var(--dim); font-size: 12px; }
+
+/* 結局 */
+.end-stats { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; font-size: 13px; color: var(--dim); }
+.end-stats b { color: var(--gold); }
+.go-gear { color: var(--dim); font-size: 12px; margin: 0 0 12px; }
+.go-gear b { font-weight: 700; }
