@@ -83,6 +83,7 @@
     CORE.hitCd = 0;
     gear.length = 0;
     bullets.length = 0; eBullets.length = 0; orbs.length = 0; floats.length = 0;
+    Mobs.reset();
     Mobs.list.length = 0;
     recompute();
     $('menu').classList.add('hidden');
@@ -99,9 +100,11 @@
       openLevelUp();
     }
   }
-  let levelChoices = null;
+  let levelChoices = null, lvTimer = 0;
+  const AUTO_PICK_SEC = 9;      // 倒數完自動隨機選，遊戲不再無限凍結等點選
   function openLevelUp() {
     S.phase = 'levelup';
+    lvTimer = AUTO_PICK_SEC;
     const pool2 = LEVEL_UPS.filter(u => !u.can || u.can(S));
     const picks = [];
     const bag = pool2.slice();
@@ -115,27 +118,51 @@
     levelChoices = picks;
     $('lvChoices').innerHTML = picks.map((u, i) =>
       `<button class="lv-btn" data-i="${i}"><b>${u.name}</b><span>${u.desc}</span></button>`).join('');
+    $('lvTimer').textContent = '⏱ ' + AUTO_PICK_SEC + ' 秒後自動選擇';
     $('levelup').classList.remove('hidden');
+  }
+  function applyLevelChoice(i) {
+    const u = levelChoices && levelChoices[i];
+    if (!u) return;
+    u.apply(S);
+    recompute();
+    $('levelup').classList.add('hidden');
+    S.phase = 'playing';
   }
   $('lvChoices').addEventListener('click', e => {
     const b = e.target.closest('.lv-btn');
     if (!b) return;
-    const u = levelChoices[+b.dataset.i];
-    if (u) u.apply(S);
-    recompute();
-    $('levelup').classList.add('hidden');
-    S.phase = 'playing';
+    applyLevelChoice(+b.dataset.i);
   });
+  // 升級倒數（真實時間 tick，不佔 step）
+  function tickLevelup(dt) {
+    lvTimer -= dt;
+    if (lvTimer <= 0) { applyLevelChoice((Math.random() * levelChoices.length) | 0); return; }
+    $('lvTimer').textContent = '⏱ ' + Math.ceil(lvTimer) + ' 秒後自動選擇';
+  }
 
   // ===== 掉落 =====
+  // v0.2.1：怪常死在玩家環帶外（外圈生成往核心走），掉落直接投影進環帶，
+  // 不然磁性 46px 根本橋不到 → gearN 永遠 0
   function dropLoot(x, y, elite) {
     const o = orbPool.get();
-    o.x = x; o.y = y; o.t = 0; o.kind = 'xp'; o.v = elite ? 12 : 1;
+    const dx = x - CORE.x, dy = y - CORE.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const lo = BAL.core.playerRingMin + 18, hi = BAL.core.playerRingMax - 24;
+    const cd = Math.max(lo, Math.min(hi, d));
+    o.x = CORE.x + dx / d * cd + (Math.random() - 0.5) * 26;
+    o.y = CORE.y + dy / d * cd + (Math.random() - 0.5) * 26;
+    o.t = 0; o.kind = 'xp'; o.v = elite ? 12 : 1;
     if (elite || Math.random() < 0.045) {       // 精英必掉、雜兵 4.5%
       o.item = Loot.makeItem(elite);
       o.kind = 'item';
     }
     orbs.push(o);
+    if (orbs.length > 300) {                    // 防爆：最舊的經驗珠直接入袋（裝備不吞）
+      const old = orbs[0];
+      if (old.kind === 'xp') { gainXp(old.v); orbPool.put(old); }
+      orbs[0] = orbs[orbs.length - 1]; orbs.pop();
+    }
   }
 
   // ===== 戰鬥 =====
@@ -188,6 +215,7 @@
     last = now;
     Engine.fpsTick(dt);
     if (S.phase === 'playing') step(dt);
+    else if (S.phase === 'levelup') tickLevelup(dt);
     render(dt);
   }
 
@@ -327,7 +355,7 @@
       const o = orbs[i];
       o.t += dt;
       const d2 = (o.x - S.x) ** 2 + (o.y - S.y) ** 2;
-      if (d2 < mag * mag) { const d = Math.sqrt(d2) || 1; o.x += (S.x - o.x) / d * 300 * dt; o.y += (S.y - o.y) / d * 300 * dt; }
+      if (d2 < mag * mag) { const d = Math.sqrt(d2) || 1; o.x += (S.x - o.x) / d * 420 * dt; o.y += (S.y - o.y) / d * 420 * dt; }
       if (d2 < 20 * 20) {
         if (o.kind === 'xp') gainXp(o.v);
         else {
@@ -353,7 +381,7 @@
     $('hudTime').textContent = fmtTime(S.time);
     $('hudLevel').textContent = 'Lv.' + S.level;
     $('hudKills').textContent = S.kills;
-    $('hudWave').textContent = '第 ' + (Mobs.wave + 1) + '/' + BAL.waveToWin + ' 波';
+    $('hudWave').textContent = '第 ' + Math.min(Mobs.wave + 1, BAL.waveToWin) + '/' + BAL.waveToWin + ' 波';
     // 核心血條
     const corePct = Math.max(0, Math.min(100, CORE.hp / CORE.maxHp * 100));
     $('hudCoreFill').style.width = corePct.toFixed(1) + '%';
@@ -379,10 +407,10 @@
     if (CORE.hp <= 0) gameOver(false);
   }
 
-  // 勝利：撐過指定波數
+  // 勝利：撐過指定波數（v0.2.1：打完整第 12 波才贏，原本第 12 波開打瞬間就結算＝只打 11 波）
   function checkWin() {
     if (S.win || S.phase !== 'playing') return;
-    if (Mobs.wave + 1 >= BAL.waveToWin) {
+    if (Mobs.wave >= BAL.waveToWin) {
       S.win = true;
       gameOver(true);
     }
@@ -407,7 +435,7 @@
     $('goTitle').textContent = win ? '園區守住了！' : '園區淪陷';
     $('goStats').innerHTML =
       `<span>存活 <b>${mins}</b></span><span>等級 <b>Lv.${S.level}</b></span><span>擊殺 <b>${S.kills}</b></span>` +
-      `<span>波次 <b>${Mobs.wave + 1}</b>/${BAL.waveToWin}</span><span>核心 <b>${Math.round(CORE.hp)}</b></span>`;
+      `<span>波次 <b>${Math.min(Mobs.wave + 1, BAL.waveToWin)}</b>/${BAL.waveToWin}</span><span>核心 <b>${Math.round(CORE.hp)}</b></span>`;
     const topGear = gear.slice(-3).reverse();
     $('goGear').innerHTML = topGear.length
       ? '戰利品：' + topGear.map(it => `<b style="color:${it.rarity.color}">${it.name}</b>`).join('、')
@@ -515,12 +543,18 @@
   }
 
   // ===== 驗證鉤：探針/測試讀狀態用（唯讀慣例，別在遊戲邏輯外改） =====
+  // v0.2.1：加 debug 鉤供 headless 探針實測 12 波平衡（keys 僅探針模擬走位用）
   window.__KS = {
     get S() { return S; },
     get gear() { return gear; },
     get mobCount() { return Mobs.list.length; },
     get dollFallback() { return !!(S.doll && S.doll.fallback); },
     get mobDolls() { return Mobs.dolls; },
+    get keys() { return keys; },
+    get orbCount() { return orbs.length; },
+    debugStart: startGame,
+    debugTick(dt, n) { for (let i = 0; i < n && S.phase === 'playing'; i++) step(dt); },
+    pickLevel(i) { applyLevelChoice(i); },
   };
 
   // 園區核心：外圈防護光環＋中央建築（純 Canvas 畫，無外部資產）

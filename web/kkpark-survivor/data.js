@@ -1,7 +1,7 @@
 'use strict';
 /* data.js — 倖存者數值表：怪、波次、詞綴、技能、升級選項。全部純資料，行為在別的檔 */
 
-const GAME_VERSION = 'v0.1.0';
+const GAME_VERSION = 'v0.2.1';
 
 // DC 群導流（跟 kkpark-map 同一條無限期邀請）
 const DC_INVITE = 'https://discord.gg/BTggYYFVf8';
@@ -72,10 +72,10 @@ const LEVEL_UPS = [
 const BAL = {
   playerSpeed: 130,          // px/s
   baseHp: 100,
-  baseFireCd: 0.85,          // 基礎彈幕間隔秒
-  baseBulletDmg: 10,
+  baseFireCd: 0.78,          // 基礎彈幕間隔秒（v0.2.1 調校：早期火力要追上生成率，不然核心 65s 淪陷）
+  baseBulletDmg: 13,
   bulletSpeed: 330,
-  magnetR: 46,               // 拾取半徑 px
+  magnetR: 64,               // 拾取半徑 px（v0.2.1：46 撿不到環帶邊的掉落）
   xpToLevel: lvl => 5 + lvl * 7,
   invulnHit: 0.6,            // 被撞後無敵秒
   ring: { r: 62, dps: 22, speed: 2.6, perLvlR: 8, perLvlDps: 10 },
@@ -86,8 +86,8 @@ const BAL = {
     radius: 64,              // 核心碰撞半徑 px（塔身 68×60，視覺一致）
     playerRingMin: 90,       // 玩家不可進內圈（不能站在核心裡）
     playerRingMax: 260,      // 玩家活動範圍上限（圍著核心打）
-    hitDmg: 10,              // 每次碰撞扣核心血
-    hitCd: 1.0,              // 碰撞扣血間隔（單隻怪約 10dps）
+    hitDmg: 7,               // 每次碰撞扣核心血（v0.2.1 調校：10 會讓漏怪堆疊時 65s 蒸發）
+    hitCd: 1.0,              // 碰撞扣血間隔（單隻怪約 7dps）
     regen: 2,                // 每秒回血（撐住壓力，別讓一波就死）
   },
   waveToWin: 12,             // 撐過第 12 波＝守住園區（勝利）

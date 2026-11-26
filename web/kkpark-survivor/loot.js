@@ -20,7 +20,7 @@ const Loot = (() => {
       if (used.has(a.k)) continue;
       used.add(a.k);
       const v = a.val[0] + Math.round(Math.random() * (a.val[1] - a.val[0]));
-      out.push({ k: a.k, v, fmt: a.fmt, stat: a.stat });
+      out.push({ k: a.k, v, fmt: a.fmt, stat: a.stat, label: a.label });
     }
     return out;
   }

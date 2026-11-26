@@ -105,6 +105,9 @@ const Mobs = (() => {
 
   function kill(i) { pool.put(list[i]); list[i] = list[list.length - 1]; list.pop(); }
 
-  return { preload, update, list, kill, get wave() { return wave; }, get dolls() { return MOB_DOLLS; },
+  // v0.2.1：開新局必須重置波次狀態（原本再玩一場會從上場死掉的波次繼續，強度直接跳級）
+  function reset() { wave = 0; waveT = 0; spawnAcc = 0; eliteDue = false; }
+
+  return { preload, update, list, kill, reset, get wave() { return wave; }, get dolls() { return MOB_DOLLS; },
     get MOB_DOLLS() { return MOB_DOLLS; }, get ELITE_DOLL() { return ELITE_DOLL; } };
 })();
