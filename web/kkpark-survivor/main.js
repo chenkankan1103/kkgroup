@@ -52,7 +52,16 @@
 
   // ===== 輸入 =====
   const keys = {};
-  window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key === ' ') e.preventDefault(); });
+  function toggleGearPanel() {
+    const el = $('gearList');
+    el.classList.toggle('hidden');
+    $('hudBag').classList.toggle('on', !el.classList.contains('hidden'));
+  }
+  window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if (e.key === ' ') e.preventDefault();
+    if (e.key === 'Tab') { e.preventDefault(); toggleGearPanel(); }
+  });
   window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
   // ===== 開場流程 =====
@@ -85,6 +94,8 @@
     bullets.length = 0; eBullets.length = 0; orbs.length = 0; floats.length = 0;
     Mobs.reset();
     Mobs.list.length = 0;
+    renderGearPanel();
+    $('hudBag').textContent = '🎒 0';
     recompute();
     $('menu').classList.add('hidden');
     $('gameover').classList.add('hidden');
@@ -364,6 +375,7 @@
           if (gear.length > 12) gear.shift();
           pushFloat(S.x, S.y - 40, o.item.name, o.item.rarity.color);
           renderGearPanel();
+          $('hudBag').textContent = '🎒 ' + gear.length;   // 面板收起時至少看得到件數
         }
         orbPool.put(o); orbs[i] = orbs[orbs.length - 1]; orbs.pop();
       }
@@ -455,6 +467,7 @@
     $('hud').classList.add('hidden');
   }
   $('btnRetry').onclick = startGame;
+  $('hudBag').onclick = toggleGearPanel;
 
   // ===== 渲染 =====
   function render(dt) {
@@ -495,7 +508,13 @@
         ctx.shadowColor = m.elite ? 'rgba(255,80,80,0.9)' : 'rgba(0,0,0,0.45)';
         ctx.shadowBlur = m.elite ? 16 : 6;
       }
-      ctx.drawImage(img, m.x - sz / 2, m.y - sz + wobY, sz, sz);
+      if ((m.fx || 1) < 0) {           // 面左：鏡射（紙娃娃素材預設面向右）
+        ctx.translate(m.x, m.y - sz / 2 + wobY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, -sz / 2, -sz / 2, sz, sz);
+      } else {
+        ctx.drawImage(img, m.x - sz / 2, m.y - sz + wobY, sz, sz);
+      }
       ctx.restore();
       if (m.hp < m.maxHp) {
         ctx.fillStyle = '#0008';
@@ -525,9 +544,16 @@
       if (S.swingT > 0 && S.doll.swing) img = S.doll.swing;
       else if (S.moving) img = S.doll.walk || S.doll.stand;
       if (img) {
+        ctx.save();
         if (S.invT > 0 && (S.time * 20 | 0) % 2 === 0) ctx.globalAlpha = 0.4;
-        ctx.drawImage(img, S.x - 26, S.y - 62, 52, 62);
-        ctx.globalAlpha = 1;
+        if (Math.cos(S.facing || 0) < -0.05) {   // 面左：鏡射
+          ctx.translate(S.x, S.y - 31);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, -26, -31, 52, 62);
+        } else {
+          ctx.drawImage(img, S.x - 26, S.y - 62, 52, 62);
+        }
+        ctx.restore();
       }
     }
     // 飄字
@@ -571,10 +597,10 @@
     ctx.arc(CORE.x, CORE.y, R, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
-    // 內圈地板
+    // 內圈地板（v0.2.2：疊層調透，讓核心磚紋理透出來）
     const g = ctx.createRadialGradient(CORE.x, CORE.y, 8, CORE.x, CORE.y, R);
-    g.addColorStop(0, 'rgba(70,90,80,0.55)');
-    g.addColorStop(1, 'rgba(40,52,46,0.25)');
+    g.addColorStop(0, 'rgba(70,90,80,0.30)');
+    g.addColorStop(1, 'rgba(40,52,46,0.12)');
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(CORE.x, CORE.y, R, 0, Math.PI * 2);

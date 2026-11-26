@@ -75,28 +75,42 @@ const Engine = (() => {
     loadTexture('assets/core.png', (im) => { tex.core = im; fin(); });
   }
 
-  // 畫地面：主紋理平鋪＋核心圈內疊核心區紋理；沒紋理就畫網格
+  // 畫地面：鏡射平鋪（相鄰格翻面拼接——接縫由構造保證連續，AI 紋理不必真無縫）
   // 注意：begin() 已把 transform 設成「世界座標」（translate 到鏡頭），所以這裡直接用世界座標畫
-  const TEX_SCALE = 2;               // 1 張 256px 紋理＝世界 512px（不然地面太密）
+  const TEX_SCALE = 2;               // 1 張 256px 紋理＝世界 512px
   function drawGround(cam, coreR) {
     if (!tex.ground) { drawGrid(cam); return; }
-    const x0 = cam.x - W / 2 - 64, y0 = cam.y - H / 2 - 64;
-    const w = W + 128, h = H + 128;
-    // 主地面平鋪（pattern 跟著世界座標走，放大 TEX_SCALE 倍讓地面有尺度感）
-    ctx.save();
-    ctx.scale(TEX_SCALE, TEX_SCALE);
-    ctx.fillStyle = ctx.createPattern(tex.ground, 'repeat');
-    ctx.fillRect(x0 / TEX_SCALE, y0 / TEX_SCALE, w / TEX_SCALE, h / TEX_SCALE);
-    ctx.restore();
-    // 核心區：疊核心廣場紋理（圓形遮罩）
+    const TS = 256 * TEX_SCALE;
+    const x0 = Math.floor((cam.x - W / 2) / TS) * TS, y0 = Math.floor((cam.y - H / 2) / TS) * TS;
+    for (let gx = x0; gx < cam.x + W / 2; gx += TS) {
+      for (let gy = y0; gy < cam.y + H / 2; gy += TS) {
+        const fx = ((Math.round(gx / TS) % 2) + 2) % 2 === 1;
+        const fy = ((Math.round(gy / TS) % 2) + 2) % 2 === 1;
+        ctx.save();
+        ctx.translate(fx ? gx + TS : gx, fy ? gy + TS : gy);
+        ctx.scale(fx ? -1 : 1, fy ? -1 : 1);
+        ctx.drawImage(tex.ground, 0, 0, TS, TS);
+        ctx.restore();
+      }
+    }
+    // 核心區：疊核心廣場紋理（圓形遮罩；磚縮更細才有地板感）
     if (tex.core && coreR) {
       ctx.save();
       ctx.beginPath();
       ctx.arc(cam.x, cam.y, coreR, 0, Math.PI * 2);
       ctx.clip();
-      ctx.scale(TEX_SCALE, TEX_SCALE);
-      ctx.fillStyle = ctx.createPattern(tex.core, 'repeat');
-      ctx.fillRect(x0 / TEX_SCALE, y0 / TEX_SCALE, w / TEX_SCALE, h / TEX_SCALE);
+      const CS = 160;
+      for (let gx = Math.floor((cam.x - coreR) / CS) * CS - CS; gx < cam.x + coreR; gx += CS) {
+        for (let gy = Math.floor((cam.y - coreR) / CS) * CS - CS; gy < cam.y + coreR; gy += CS) {
+          const fx = ((Math.round(gx / CS) % 2) + 2) % 2 === 1;
+          const fy = ((Math.round(gy / CS) % 2) + 2) % 2 === 1;
+          ctx.save();
+          ctx.translate(fx ? gx + CS : gx, fy ? gy + CS : gy);
+          ctx.scale(fx ? -1 : 1, fy ? -1 : 1);
+          ctx.drawImage(tex.core, 0, 0, CS, CS);
+          ctx.restore();
+        }
+      }
       ctx.restore();
     }
   }

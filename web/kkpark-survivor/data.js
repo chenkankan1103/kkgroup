@@ -1,7 +1,7 @@
 'use strict';
 /* data.js — 倖存者數值表：怪、波次、詞綴、技能、升級選項。全部純資料，行為在別的檔 */
 
-const GAME_VERSION = 'v0.2.1';
+const GAME_VERSION = 'v0.2.2';
 
 // DC 群導流（跟 kkpark-map 同一條無限期邀請）
 const DC_INVITE = 'https://discord.gg/BTggYYFVf8';

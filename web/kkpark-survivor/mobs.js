@@ -61,6 +61,7 @@ const Mobs = (() => {
     m.x = CORE.x + Math.cos(ang) * R;
     m.y = CORE.y + Math.sin(ang) * R;
     m.vx = 0; m.vy = 0;
+    m.fx = 1;
     list.push(m);
   }
 
@@ -90,6 +91,7 @@ const Mobs = (() => {
       const sp = d.speed * (m.elite ? 0.8 : 1);
       const dx = CORE.x - m.x, dy = CORE.y - m.y;
       const dist = Math.hypot(dx, dy) || 1;
+      if (Math.abs(dx) > 6) m.fx = dx > 0 ? 1 : -1;   // 面向核心側（渲染翻面用）
       if (d.ranged && dist < d.range * 0.7) {
         // 保持距離橫移（仍瞄核心）
         m.x += (-dy / dist) * sp * 0.6 * dt;

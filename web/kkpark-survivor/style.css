@@ -21,6 +21,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
   padding: 4px 9px; font-size: 13px; font-weight: 700;
 }
 .chip.dc { pointer-events: auto; text-decoration: none; color: #fff; background: #5865F2; border-color: #5865F2; }
+/* 裝備包開關（v0.2.2：面板平時收起，Tab 或點鈕展開——不再擋視線） */
+.chip.bag { pointer-events: auto; cursor: pointer; font-family: inherit; }
+.chip.bag:hover { border-color: var(--gold); }
+.chip.bag.on { border-color: var(--gold); color: var(--gold); }
 /* 園區核心血條（守塔） */
 .core-bar {
   display: flex; align-items: center; gap: 8px; margin-top: 6px;
