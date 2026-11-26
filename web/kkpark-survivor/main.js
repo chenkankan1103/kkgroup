@@ -299,6 +299,11 @@
 
     // 怪撞核心扣血（守塔主機制）＋撞玩家扣玩家血
     if (CORE.hitCd > 0) CORE.hitCd -= dt;
+    // 核心回血：沒怪靠近時慢慢回（避免一波打死就沒得玩）
+    if (BAL.core.regen > 0 && CORE.hp < CORE.maxHp) {
+      const near = Mobs.list.some(m => (m.x - CORE.x) ** 2 + (m.y - CORE.y) ** 2 < 260 * 260);
+      if (!near) CORE.hp = Math.min(CORE.maxHp, CORE.hp + BAL.core.regen * dt);
+    }
     for (const m of Mobs.list) {
       const dCore = (m.x - CORE.x) ** 2 + (m.y - CORE.y) ** 2;
       if (dCore < (BAL.core.radius + m.scale * 14) ** 2) {
@@ -427,7 +432,7 @@
   function render(dt) {
     const cam = { x: CORE.x, y: CORE.y };   // 鏡頭跟核心（玩家在核心周圍）
     Engine.begin(cam);
-    Engine.drawGrid(cam);
+    Engine.drawGround(cam, BAL.core.radius);
     const ctx = Engine.ctx;
     drawCore(ctx);
     // 掉落物＋光柱
@@ -448,9 +453,10 @@
     }
     // 怪
     const wob = t => Math.sin(t * 10) * 2;
+    const mobKeys = Object.keys(MOB_TYPES);
     for (const m of Mobs.list) {
-      const di = Object.keys(MOB_TYPES).indexOf(m.type);
-      const doll = m.elite ? Mobs.ELITE_DOLL : Mobs.MOB_DOLLS[di];
+      const di = mobKeys.indexOf(m.type);
+      const doll = m.elite ? Mobs.ELITE_DOLL : Mobs.MOB_DOLLS[di] || Mobs.MOB_DOLLS[0];
       const img = doll && (doll.walk && (Math.sin(m.t * 8) > 0 ? doll.walk : doll.stand) || doll.stand);
       if (!img) continue;
       ctx.save();
@@ -569,5 +575,6 @@
     .then(() => Mobs.preload())
     .then(() => { $('btnStart').disabled = false; $('menuHint').textContent = '造型已就緒'; })
     .catch(() => { $('btnStart').disabled = false; $('menuHint').textContent = '造型載入失敗，用替代圖上陣'; });
+  Engine.loadTextures(() => { /* 紋理載入完就緒（失敗自動退回網格）*/ });
   requestAnimationFrame(loop);
 })();

@@ -12,18 +12,31 @@ const Mobs = (() => {
   const MOB_LOOK_KEY = { rusher: 'patrol', swarm: 'plainclothes', gunner: 'officer' };
 
   // 預載：每怪種一份 stand/walk（一次載入，戰鬥零請求）
+  // 失敗保護：單一 look 載入失敗就跳過（render 那邊有 fallback 圖，怪不會整隻隱形）
   async function preload() {
     const keys = Object.keys(MOB_TYPES);
     for (const k of keys) {
-      const lookKey = MOB_LOOK_KEY[k] || 'patrol';
-      const look = resolveLook(lookKey, 'survivor-' + k);
-      const doll = await Player.preloadDoll(look);
-      MOB_DOLLS.push({ ...doll, hue: MOB_TYPES[k].hue });
+      try {
+        const lookKey = MOB_LOOK_KEY[k] || 'patrol';
+        const look = resolveLook(lookKey, 'survivor-' + k);
+        const doll = await Player.preloadDoll(look);
+        MOB_DOLLS.push({ ...doll, hue: MOB_TYPES[k].hue });
+      } catch (e) { /* 這個怪種沒有圖就沒圖，不影響其他種 */ }
     }
-    // 精英：隊長外型（深藍制服＋深色軍帽）
-    const eliteLook = resolveLook('commander', 'survivor-elite');
-    const ed = await Player.preloadDoll(eliteLook);
-    ELITE_DOLL.stand = ed.stand; ELITE_DOLL.walk = ed.walk;
+    try {
+      const eliteLook = resolveLook('commander', 'survivor-elite');
+      const ed = await Player.preloadDoll(eliteLook);
+      ELITE_DOLL.stand = ed.stand; ELITE_DOLL.walk = ed.walk;
+    } catch (e) { /* 精英沒圖就用普通怪外型 */ }
+    // render 端：外型數量不足時用 fallback 圖補（避免怪整隻不畫）
+    while (MOB_DOLLS.length < keys.length) {
+      const fb = await Player.preloadDoll({ face: 20005, hair: 30120, top: 1040001, bottom: 1060001, shoes: 1072005 });
+      MOB_DOLLS.push({ ...fb, hue: 0 });
+    }
+    if (!ELITE_DOLL.stand) {
+      const fb = await Player.preloadDoll({ face: 20005, hair: 30120, top: 1050478, bottom: 1060001, shoes: 1073002, hat: 1004964 });
+      ELITE_DOLL.stand = fb.stand; ELITE_DOLL.walk = fb.walk;
+    }
     return MOB_DOLLS.length === keys.length;
   }
 

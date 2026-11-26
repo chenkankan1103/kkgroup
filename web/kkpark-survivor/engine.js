@@ -5,6 +5,7 @@ const Engine = (() => {
   let cv = null, ctx = null, W = 0, H = 0, dpr = 1;
   let Q = 2;                       // 2 全效 / 1 減特效 / 0 減粒子
   let fpsAcc = 0, fpsN = 0;
+  const tex = {};                  // 地紋理（AI 生成，加載失敗就退回網格）
 
   // 通用零配置池：物件重用，永不 splice/new
   function makePool(create, reset) {
@@ -60,6 +61,46 @@ const Engine = (() => {
     ctx.stroke();
   }
 
-  return { init, begin, end, drawGrid, fpsTick, makePool,
+  // ===== 地面紋理（AI 生成，加載失敗自動退回網格）=====
+  function loadTexture(url, onReady) {
+    const im = new Image();
+    im.onload = () => { onReady(im); };
+    im.onerror = () => { onReady(null); };
+    im.src = url;
+  }
+  function loadTextures(onDone) {
+    let left = 2;
+    const fin = () => { if (--left <= 0) onDone(); };
+    loadTexture('assets/ground.png', (im) => { tex.ground = im; fin(); });
+    loadTexture('assets/core.png', (im) => { tex.core = im; fin(); });
+  }
+
+  // 畫地面：主紋理平鋪＋核心圈內疊核心區紋理；沒紋理就畫網格
+  // 注意：begin() 已把 transform 設成「世界座標」（translate 到鏡頭），所以這裡直接用世界座標畫
+  const TEX_SCALE = 2;               // 1 張 256px 紋理＝世界 512px（不然地面太密）
+  function drawGround(cam, coreR) {
+    if (!tex.ground) { drawGrid(cam); return; }
+    const x0 = cam.x - W / 2 - 64, y0 = cam.y - H / 2 - 64;
+    const w = W + 128, h = H + 128;
+    // 主地面平鋪（pattern 跟著世界座標走，放大 TEX_SCALE 倍讓地面有尺度感）
+    ctx.save();
+    ctx.scale(TEX_SCALE, TEX_SCALE);
+    ctx.fillStyle = ctx.createPattern(tex.ground, 'repeat');
+    ctx.fillRect(x0 / TEX_SCALE, y0 / TEX_SCALE, w / TEX_SCALE, h / TEX_SCALE);
+    ctx.restore();
+    // 核心區：疊核心廣場紋理（圓形遮罩）
+    if (tex.core && coreR) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cam.x, cam.y, coreR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.scale(TEX_SCALE, TEX_SCALE);
+      ctx.fillStyle = ctx.createPattern(tex.core, 'repeat');
+      ctx.fillRect(x0 / TEX_SCALE, y0 / TEX_SCALE, w / TEX_SCALE, h / TEX_SCALE);
+      ctx.restore();
+    }
+  }
+
+  return { init, begin, end, drawGrid, drawGround, loadTextures, fpsTick, makePool,
     get ctx() { return ctx; }, get W() { return W; }, get H() { return H; }, get Q() { return Q; } };
 })();
