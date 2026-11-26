@@ -11,10 +11,12 @@ const API_BASE = 'https://kkgroup2026.duckdns.org';
 
 // ===== 怪種 =====
 // hue: 疊在紙娃娃上的色相旋轉（CSS filter），0=原色。speed px/s、hp 基數、dmg 碰撞傷害、xp 經驗珠
+// v0.2.0：怪物改穿「巡查員制服」後，hue-rotate 會洗掉制服原色（深藍變青）→ 全部改 0，
+// 改用「配件色」區分怪種（accessory 槽位只染配件不染全身），靠外型本身辨識。
 const MOB_TYPES = {
-  rusher: { name: '打手',   hue: 0,   speed: 52, hp: 18,  dmg: 8,  xp: 1,  r: 14 },
-  swarm:  { name: '小弟',   hue: 140, speed: 78, hp: 10,  dmg: 5,  xp: 1,  r: 12 },
-  gunner: { name: '槍手',   hue: 220, speed: 34, hp: 26,  dmg: 10, xp: 3,  r: 14, ranged: true, range: 240, fireCd: 2.2, bulletSpeed: 170 },
+  rusher: { name: '巡查員', hue: 0, speed: 52, hp: 18,  dmg: 8,  xp: 1,  r: 14 },
+  swarm:  { name: '便衣',   hue: 0, speed: 78, hp: 10,  dmg: 5,  xp: 1,  r: 12 },
+  gunner: { name: '槍手',   hue: 0, speed: 34, hp: 26,  dmg: 10, xp: 3,  r: 14, ranged: true, range: 240, fireCd: 2.2, bulletSpeed: 170 },
 };
 
 // 波次：30 秒一群，強度遞增。spawn/s、hp 倍率、怪種權重
@@ -78,4 +80,14 @@ const BAL = {
   invulnHit: 0.6,            // 被撞後無敵秒
   ring: { r: 62, dps: 22, speed: 2.6, perLvlR: 8, perLvlDps: 10 },
   lance: { cd: 1.9, dmg: 24, speed: 420, perLvlDmg: 10 },
+  // ===== 守塔：園區核心 =====
+  core: {
+    hp: 300,                 // 核心血量（被怪碰到就掉）
+    radius: 96,              // 核心碰撞半徑 px
+    playerRingMin: 70,       // 玩家不可進內圈（不能站在核心裡）
+    playerRingMax: 260,      // 玩家活動範圍上限（圍著核心打）
+    hitDmg: 12,              // 每次碰撞扣核心血
+    hitCd: 0.8,              // 碰撞扣血間隔
+  },
+  waveToWin: 12,             // 撐過第 12 波＝守住園區（勝利）
 };

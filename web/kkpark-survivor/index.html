@@ -16,21 +16,23 @@
     <span class="chip" id="hudTime">0:00</span>
     <span class="chip" id="hudLevel">Lv.1</span>
     <span class="chip" id="hudKills">0</span>
-    <span class="chip" id="hudWave">第 1 波</span>
+    <span class="chip" id="hudWave">第 1/12 波</span>
     <a class="chip dc" id="hudDc" href="https://discord.gg/BTggYYFVf8" target="_blank" rel="noopener">💬 DC</a>
   </div>
+  <div class="core-bar"><span>🏢 園區</span><div class="bar"><div class="fill" id="hudCoreFill"></div></div><span class="mono" id="hudCoreT">300</span></div>
   <div id="gearList"></div>
 </div>
 
 <!-- 開場 -->
 <div id="menu" class="overlay">
   <div class="modal">
-    <h1>KK 園區倖存者</h1>
-    <p class="sub">楓之谷皮・POE 掉落骨・倖存者玩法</p>
+    <h1>KK 園區守塔</h1>
+    <p class="sub">守住園區，撐過一波波巡查員。楓之谷皮・POE 掉落骨</p>
     <ul class="tips">
-      <li>WASD／方向鍵走位，彈幕自動開火</li>
+      <li>WASD／方向鍵走位，彈幕自動開火（只能在園區周圍活動）</li>
+      <li>怪會攻擊<b>園區核心</b>，核心血量歸零就淪陷；撐過 12 波＝守住</li>
       <li>怪掉裝備：<b class="c-normal">白</b>／<b class="c-magic">藍</b>／<b class="c-rare">黃</b>光柱，撿了直接生效</li>
-      <li>升級三選一，撐住波次</li>
+      <li>升級三選一，強化火力</li>
     </ul>
     <button id="btnStart" class="btn main" disabled>載入造型中…</button>
     <p class="hint" id="menuHint"></p>
@@ -49,7 +51,7 @@
 <!-- 結局 -->
 <div id="gameover" class="overlay hidden">
   <div class="modal">
-    <h2>倒下了</h2>
+    <h2 id="goTitle">園區淪陷</h2>
     <div id="goStats" class="end-stats"></div>
     <p id="goGear" class="go-gear"></p>
     <button id="btnShare" class="btn dc" style="width:100%">📋 複製戰績</button>
@@ -59,6 +61,7 @@
 
 <script src="data.js"></script>
 <script src="npc_looks.js"></script>
+<script src="looks.js"></script>
 <script src="engine.js"></script>
 <script src="player.js"></script>
 <script src="loot.js"></script>

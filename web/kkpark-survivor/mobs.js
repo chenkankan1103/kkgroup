@@ -1,37 +1,27 @@
 'use strict';
-/* mobs.js — 怪生成（NPC 造型池＋hue-rotate）、波次、移動、敵彈 */
+/* mobs.js — 怪生成（外型表 looks.js）、波次、移動、敵彈
+   守塔模式：怪一律瞄核心（CORE），玩家只是守在核心周圍的人。 */
+
+const CORE = { x: 0, y: 0, hp: BAL.core.hp, maxHp: BAL.core.hp, hitCd: 0 };
 
 const Mobs = (() => {
   const MOB_DOLLS = [];    // 預載好的 {stand,walk,hue}，按怪種索引
   const ELITE_DOLL = { stand: null, walk: null, hue: 300 };
 
-  // 從 NPC_LOOKS_DB hash 抽 3 組造型（每怪種固定一套，跨局穩定）
-  function hashStr(s, salt) {
-    let h = salt | 0;
-    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 2654435761) | 0;
-    return Math.abs(h);
-  }
-  function lookFor(typeKey, salt) {
-    const db = NPC_LOOKS_DB;
-    const gender = hashStr(typeKey + salt, 7) % 2 === 0 ? 'male' : 'female';
-    const g = db[gender];
-    const pick = (arr, s2, def) => (arr && arr.length ? arr[hashStr(typeKey + salt, s2) % arr.length] : def);
-    return {
-      face: pick(g.face, 11, 20005), hair: pick(g.hair, 13, 30120),
-      top: pick(db.top[gender], 17, 1040014), bottom: pick(db.bottom[gender], 19, 1060096),
-      shoes: pick(db.shoes, 23, 1072005),
-    };
-  }
+  // 怪種 → 外型 look（looks.js）：巡邏員/便衣/制服 三種巡查員外型
+  const MOB_LOOK_KEY = { rusher: 'patrol', swarm: 'plainclothes', gunner: 'officer' };
 
   // 預載：每怪種一份 stand/walk（一次載入，戰鬥零請求）
   async function preload() {
     const keys = Object.keys(MOB_TYPES);
     for (const k of keys) {
-      const look = lookFor(k, 'kkpark');
+      const lookKey = MOB_LOOK_KEY[k] || 'patrol';
+      const look = resolveLook(lookKey, 'survivor-' + k);
       const doll = await Player.preloadDoll(look);
       MOB_DOLLS.push({ ...doll, hue: MOB_TYPES[k].hue });
     }
-    const eliteLook = lookFor('elite', 'boss');
+    // 精英：隊長外型（深藍制服＋深色軍帽）
+    const eliteLook = resolveLook('commander', 'survivor-elite');
     const ed = await Player.preloadDoll(eliteLook);
     ELITE_DOLL.stand = ed.stand; ELITE_DOLL.walk = ed.walk;
     return MOB_DOLLS.length === keys.length;
@@ -52,11 +42,11 @@ const Mobs = (() => {
     m.maxHp = Math.round(d.hp * WAVE.hpMult(waveIdx()) * (elite ? 10 : 1));
     m.hp = m.maxHp;
     m.scale = elite ? 1.8 : 1;
-    // 畫面外環狀生成
+    // 守塔模式：環繞核心外圈生成（畫面外）
     const ang = Math.random() * Math.PI * 2;
     const R = Math.max(Engine.W, Engine.H) * 0.62 + 40;
-    m.x = px + Math.cos(ang) * R;
-    m.y = py + Math.sin(ang) * R;
+    m.x = CORE.x + Math.cos(ang) * R;
+    m.y = CORE.y + Math.sin(ang) * R;
     m.vx = 0; m.vy = 0;
     list.push(m);
   }
@@ -79,16 +69,16 @@ const Mobs = (() => {
     if (eliteDue && list.length < 240) { eliteDue = false; spawn('rusher', true, S.x, S.y); }
     else eliteDue = false;
 
-    // 移動＆敵彈
+    // 移動＆敵彈（守塔模式：怪瞄核心 0,0，不是瞄玩家）
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i];
       m.t += dt;
       const d = MOB_TYPES[m.type];
       const sp = d.speed * (m.elite ? 0.8 : 1);
-      const dx = S.x - m.x, dy = S.y - m.y;
+      const dx = CORE.x - m.x, dy = CORE.y - m.y;
       const dist = Math.hypot(dx, dy) || 1;
       if (d.ranged && dist < d.range * 0.7) {
-        // 保持距離橫移
+        // 保持距離橫移（仍瞄核心）
         m.x += (-dy / dist) * sp * 0.6 * dt;
         m.y += (dx / dist) * sp * 0.6 * dt;
         m.fireT += dt;

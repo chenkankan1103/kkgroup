@@ -60,21 +60,27 @@
     let look = await Player.fetchMyLook();
     if (!look) look = npcFallback();
     S.look = look;
-    S.doll = await Player.preloadDoll(look);
+    S.doll = await Player.preloadHero(look);
   }
   function npcFallback() {
     const db = NPC_LOOKS_DB;
-    const g = { face: db.male, hair: db.male, top: db.top.male, bottom: db.bottom.male, shoes: db.shoes };
     const p = (a, d) => (a && a.length ? a[(Math.random() * a.length) | 0] : d);
-    return { face: p(g.face, 20005), hair: p(g.hair, 30120), top: p(g.top, 1040014), bottom: p(g.bottom, 1060096), shoes: p(g.shoes, 1072005) };
+    return {
+      face: p(db.male.face, 20005), hair: p(db.male.hair, 30120),
+      top: p(db.top.male, 1040014), bottom: p(db.bottom.male, 1060096), shoes: p(db.shoes, 1072005),
+      hat: 0, accessory: 0,
+    };
   }
 
   $('btnStart').onclick = startGame;
   function startGame() {
     // 重置
     S.phase = 'playing';
-    S.x = 0; S.y = 0; S.invT = 0; S.xp = 0; S.level = 1; S.kills = 0; S.time = 0;
+    S.x = 0; S.y = 180; S.invT = 0; S.xp = 0; S.level = 1; S.kills = 0; S.time = 0;
     S.skills = { bullet: { lvl: 1 } };
+    S.win = false;
+    CORE.hp = CORE.maxHp = BAL.core.hp;
+    CORE.hitCd = 0;
     gear.length = 0;
     bullets.length = 0; eBullets.length = 0; orbs.length = 0; floats.length = 0;
     Mobs.list.length = 0;
@@ -199,11 +205,26 @@
     S.moving = !!(mx || my);
     const spd = BAL.playerSpeed * (1 + (st.mspdPct || 0) / 100);
     S.x += mx * spd * dt; S.y += my * spd * dt;
+    // 守塔：玩家只能在核心周圍的環帶活動（進不了核心、跑不出範圍）
+    {
+      const dx = S.x - CORE.x, dy = S.y - CORE.y;
+      const d = Math.hypot(dx, dy);
+      const minR = BAL.core.playerRingMin, maxR = BAL.core.playerRingMax;
+      if (d < minR) {
+        const k = d < 0.001 ? 0 : minR / d;
+        S.x = CORE.x + dx * k; S.y = CORE.y + dy * k;
+      } else if (d > maxR) {
+        const k = maxR / d;
+        S.x = CORE.x + dx * k; S.y = CORE.y + dy * k;
+      }
+    }
 
     // 基礎彈幕
     S.fireT += dt;
     const fireCd = BAL.baseFireCd / (1 + (st.aspdPct || 0) / 100);
-    if (S.skills.bullet && S.fireT >= fireCd) { S.fireT = 0; fireBullet(); }
+    if (S.skills.bullet && S.fireT >= fireCd) { S.fireT = 0; fireBullet(); S.swingT = 0.18; }
+    // 揮手動作計時（攻擊/施放時短暫換 pose）
+    if (S.swingT > 0) S.swingT -= dt;
     // 環身鎖鏈
     if (S.skills.ring) {
       const r = S.skills.ring.lvl;
@@ -263,26 +284,37 @@
         eBullets.push(eb);
       });
 
-    // 敵彈
+    // 敵彈（守塔：瞄核心，命中核心扣核心血；碰到玩家也扣一點）
     for (let i = eBullets.length - 1; i >= 0; i--) {
       const b = eBullets[i];
       b.life -= dt;
       b.x += b.vx * dt; b.y += b.vy * dt;
-      const dead = b.life <= 0 || ((b.x - S.x) ** 2 + (b.y - S.y) ** 2 < 14 ** 2);
-      if (dead && b.life > 0) damagePlayer(MOB_TYPES.gunner.dmg * 0.6);
+      const hitCore = (b.x - CORE.x) ** 2 + (b.y - CORE.y) ** 2 < BAL.core.radius ** 2;
+      const hitPlayer = (b.x - S.x) ** 2 + (b.y - S.y) ** 2 < 14 ** 2;
+      const dead = b.life <= 0 || hitCore || hitPlayer;
+      if (hitCore && b.life > 0) damageCore(MOB_TYPES.gunner.dmg * 0.6);
+      if (hitPlayer && b.life > 0) damagePlayer(MOB_TYPES.gunner.dmg * 0.6);
       if (dead) { eBulletPool.put(b); eBullets[i] = eBullets[eBullets.length - 1]; eBullets.pop(); }
     }
 
-    // 碰撞傷害＋被撞無敵
-    if (S.invT > 0) S.invT -= dt;
-    else {
-      for (const m of Mobs.list) {
+    // 怪撞核心扣血（守塔主機制）＋撞玩家扣玩家血
+    if (CORE.hitCd > 0) CORE.hitCd -= dt;
+    for (const m of Mobs.list) {
+      const dCore = (m.x - CORE.x) ** 2 + (m.y - CORE.y) ** 2;
+      if (dCore < (BAL.core.radius + m.scale * 14) ** 2) {
+        if (CORE.hitCd <= 0) {
+          CORE.hitCd = BAL.core.hitCd;
+          damageCore(BAL.core.hitDmg * (m.elite ? 1.8 : 1));
+        }
+      }
+      if (S.invT <= 0) {
         if ((m.x - S.x) ** 2 + (m.y - S.y) ** 2 < (m.scale * 14 + 12) ** 2) {
           damagePlayer(MOB_TYPES[m.type].dmg * (m.elite ? 1.6 : 1));
           break;
         }
       }
     }
+    if (S.invT > 0) S.invT -= dt;
 
     // 撿物
     const mag = st.magnet;
@@ -316,7 +348,13 @@
     $('hudTime').textContent = fmtTime(S.time);
     $('hudLevel').textContent = 'Lv.' + S.level;
     $('hudKills').textContent = S.kills;
-    $('hudWave').textContent = '第 ' + (Mobs.wave + 1) + ' 波';
+    $('hudWave').textContent = '第 ' + (Mobs.wave + 1) + '/' + BAL.waveToWin + ' 波';
+    // 核心血條
+    const corePct = Math.max(0, Math.min(100, CORE.hp / CORE.maxHp * 100));
+    $('hudCoreFill').style.width = corePct.toFixed(1) + '%';
+    $('hudCoreFill').className = 'fill' + (corePct <= 30 ? ' hot' : corePct <= 60 ? ' warn' : '');
+    $('hudCoreT').textContent = Math.round(CORE.hp);
+    checkWin();
   }
 
   function damagePlayer(dmg) {
@@ -326,7 +364,23 @@
     pushFloat(S.x, S.y - 30, '-' + Math.round(dmg), '#ff6b6b');
     $('game').classList.add('hitflash');
     setTimeout(() => $('game').classList.remove('hitflash'), 120);
-    if (S.stats.hp <= 0) gameOver();
+    if (S.stats.hp <= 0) gameOver(false);
+  }
+
+  // 核心（園區）受損：血量歸零＝園區淪陷
+  function damageCore(dmg) {
+    CORE.hp = Math.max(0, CORE.hp - dmg);
+    pushFloat(CORE.x, CORE.y - 70, '-' + Math.round(dmg), '#ff9b6b');
+    if (CORE.hp <= 0) gameOver(false);
+  }
+
+  // 勝利：撐過指定波數
+  function checkWin() {
+    if (S.win || S.phase !== 'playing') return;
+    if (Mobs.wave + 1 >= BAL.waveToWin) {
+      S.win = true;
+      gameOver(true);
+    }
   }
 
   function fmtTime(t) {
@@ -342,16 +396,18 @@
   }
 
   // ===== 結局 =====
-  function gameOver() {
+  function gameOver(win) {
     S.phase = 'gameover';
     const mins = fmtTime(S.time);
+    $('goTitle').textContent = win ? '園區守住了！' : '園區淪陷';
     $('goStats').innerHTML =
-      `<span>存活 <b>${mins}</b></span><span>等級 <b>Lv.${S.level}</b></span><span>擊殺 <b>${S.kills}</b></span><span>波次 <b>${Mobs.wave + 1}</b></span>`;
+      `<span>存活 <b>${mins}</b></span><span>等級 <b>Lv.${S.level}</b></span><span>擊殺 <b>${S.kills}</b></span>` +
+      `<span>波次 <b>${Mobs.wave + 1}</b>/${BAL.waveToWin}</span><span>核心 <b>${Math.round(CORE.hp)}</b></span>`;
     const topGear = gear.slice(-3).reverse();
     $('goGear').innerHTML = topGear.length
       ? '戰利品：' + topGear.map(it => `<b style="color:${it.rarity.color}">${it.name}</b>`).join('、')
       : '（沒撿到裝備）';
-    const shareTxt = `🏴 KK 園區倖存者｜存活 ${mins}・Lv.${S.level}・擊殺 ${S.kills}\n來臥底兼割草：${DC_INVITE}`;
+    const shareTxt = `🏴 KK 園區守塔｜${win ? '守住園區' : '園區淪陷'}・存活 ${mins}・Lv.${S.level}・擊殺 ${S.kills}\n來守一波：${DC_INVITE}`;
     $('btnShare').onclick = () => {
       const done = () => { $('btnShare').textContent = '✓ 已複製'; setTimeout(() => { $('btnShare').textContent = '📋 複製戰績'; }, 2200); };
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareTxt).then(done).catch(() => {});
@@ -369,10 +425,11 @@
 
   // ===== 渲染 =====
   function render(dt) {
-    const cam = { x: S.x, y: S.y };
+    const cam = { x: CORE.x, y: CORE.y };   // 鏡頭跟核心（玩家在核心周圍）
     Engine.begin(cam);
     Engine.drawGrid(cam);
     const ctx = Engine.ctx;
+    drawCore(ctx);
     // 掉落物＋光柱
     for (const o of orbs) {
       if (o.kind === 'xp') {
@@ -428,9 +485,11 @@
       ctx.arc(S.x + Math.cos(S.ringAng) * R, S.y + Math.sin(S.ringAng) * R, 10, 0, 7);
       ctx.stroke();
     }
-    // 主角
+    // 主角（走動用 walk、攻擊用 swing、其餘 stand）
     if (S.doll) {
-      const img = S.moving ? (S.doll.walk || S.doll.stand) : S.doll.stand;
+      let img = S.doll.stand;
+      if (S.swingT > 0 && S.doll.swing) img = S.doll.swing;
+      else if (S.moving) img = S.doll.walk || S.doll.stand;
       if (img) {
         if (S.invT > 0 && (S.time * 20 | 0) % 2 === 0) ctx.globalAlpha = 0.4;
         ctx.drawImage(img, S.x - 26, S.y - 62, 52, 62);
@@ -457,6 +516,52 @@
     get dollFallback() { return !!(S.doll && S.doll.fallback); },
     get mobDolls() { return Mobs.dolls; },
   };
+
+  // 園區核心：外圈防護光環＋中央建築（純 Canvas 畫，無外部資產）
+  function drawCore(ctx) {
+    const R = BAL.core.radius;
+    const hpPct = Math.max(0, Math.min(1, CORE.hp / CORE.maxHp));
+    // 防護圈
+    ctx.save();
+    ctx.strokeStyle = hpPct > 0.6 ? 'rgba(90,220,170,0.35)' : hpPct > 0.3 ? 'rgba(240,190,80,0.45)' : 'rgba(240,90,80,0.55)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([12, 10]);
+    ctx.lineDashOffset = -(performance.now() / 60) % 22;   // 緩慢旋轉＝運作中
+    ctx.beginPath();
+    ctx.arc(CORE.x, CORE.y, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 內圈地板
+    const g = ctx.createRadialGradient(CORE.x, CORE.y, 8, CORE.x, CORE.y, R);
+    g.addColorStop(0, 'rgba(70,90,80,0.55)');
+    g.addColorStop(1, 'rgba(40,52,46,0.25)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(CORE.x, CORE.y, R, 0, Math.PI * 2);
+    ctx.fill();
+    // 中央建築（主樓）：矩形塔＋窗格
+    ctx.fillStyle = 'rgba(30,36,44,0.95)';
+    ctx.strokeStyle = 'rgba(150,170,190,0.75)';
+    ctx.lineWidth = 2;
+    ctx.fillRect(CORE.x - 34, CORE.y - 52, 68, 60);
+    ctx.strokeRect(CORE.x - 34, CORE.y - 52, 68, 60);
+    ctx.fillStyle = 'rgba(255,211,92,0.85)';
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        if ((r + c) % 2 === 0) continue;
+        ctx.fillRect(CORE.x - 26 + c * 18, CORE.y - 44 + r * 15, 10, 8);
+      }
+    }
+    ctx.fillStyle = 'rgba(240,166,60,0.9)';
+    ctx.fillRect(CORE.x - 34, CORE.y - 56, 68, 6);   // 頂部招牌
+    // 血條
+    const bw = 120, bh = 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(CORE.x - bw / 2, CORE.y - 76, bw, bh);
+    ctx.fillStyle = hpPct > 0.6 ? '#5ee0a0' : hpPct > 0.3 ? '#e0b14c' : '#e05a47';
+    ctx.fillRect(CORE.x - bw / 2 + 1, CORE.y - 76 + 1, (bw - 2) * hpPct, bh - 2);
+    ctx.restore();
+  }
 
   // ===== 啟動 =====
   // 造型＋怪造型都預載完才開始（怪造型沒載完就開打會看不到怪）

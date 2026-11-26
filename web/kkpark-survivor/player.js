@@ -3,15 +3,19 @@
 
 const Player = (() => {
   // 紙娃娃 URL：跟 kkpark-map avatar.js 同公式（七件組＋pose；每件要帶 region/version，純 ID 必 400）
+  // 支援 hat / accessory 槽位（插在 hair 後、top 前）——外型表 looks.js 的巡查員帽靠這個
+  // frame：walk1 走第 1 幀，其餘第 0 幀；animated=true 走 GIF（主角用）
   function dollUrl(look, pose, animated, resize) {
     const it = (v, def) => `{"itemId":${parseInt(v, 10) || def},"region":"TWMS","version":"256"}`;
     const items = [
       it(look.skin, 12000), `{"itemId":2000,"region":"TWMS","version":"256"}`,
       it(look.face, 20005), it(look.hair, 30120),
-      it(look.overall || look.top, 1040014), it(look.bottom, 1060096), it(look.shoes, 1072005),
     ];
-    const tail = animated === false ? '0' : 'animated';
-    return `https://maplestory.io/api/character/${items.join(',')}/${pose}/${tail}?showears=false&showLefEars=false&showHighLefEars=false&resize=${resize || 3}&flipX=true`;
+    if (look.hat) items.push(it(look.hat, 0));
+    if (look.accessory) items.push(it(look.accessory, 0));
+    items.push(it(look.overall || look.top, 1040014), it(look.bottom, 1060096), it(look.shoes, 1072005));
+    const tail = animated === true ? 'animated' : (pose === 'walk1' ? '1' : '0');
+    return `https://maplestory.io/api/character/${items.join(',')}/${pose || 'stand1'}/${tail}?showears=false&showLefEars=false&showHighLefEars=false&resize=${resize || 3}&flipX=true`;
   }
 
   // VM 紙娃娃 JSON → look 物件（玩家 DC 造型；快取同 kkpark-map key）
@@ -77,7 +81,7 @@ const Player = (() => {
     for (let i = 0; i < n.length; i++) h = Math.imul(h ^ n.charCodeAt(i), 2654435761) | 0;
     return Math.abs(h);
   }
-  // 怪/主角共用：預載 stand+walk 兩幀
+  // 怪/主角共用：預載 stand+walk 兩幀；主角另載 swingT1~3（可用動作：待命/走/揮手）
   async function preloadDoll(look) {
     const [stand, walk] = await Promise.all([
       loadImage(dollUrl(look, 'stand1', false, 3)),
@@ -87,5 +91,18 @@ const Player = (() => {
     return fallbackDoll(look, look.hair);
   }
 
-  return { fetchMyLook, preloadDoll, dollUrl };
+  // 主角專用：多載幾個 pose 當動作（swingT1~3 是 maplestory.io 實測有效的揮手動作）
+  async function preloadHero(look) {
+    const base = await preloadDoll(look);
+    if (base.fallback) return base;
+    const extra = await Promise.all([
+      loadImage(dollUrl(look, 'swingT1', false, 3)),
+      loadImage(dollUrl(look, 'swingT2', false, 3)),
+      loadImage(dollUrl(look, 'swingT3', false, 3)),
+    ]);
+    const poses = extra.filter(Boolean);
+    return { ...base, poses, swing: poses[0] || base.stand };
+  }
+
+  return { fetchMyLook, preloadDoll, preloadHero, dollUrl };
 })();
