@@ -437,7 +437,23 @@
     const el = $('gearList');
     el.innerHTML = gear.slice(-6).reverse().map(it =>
       `<div class="gear-item" style="border-color:${it.rarity.color}"><b style="color:${it.rarity.color}">${it.name}</b>` +
-      `<span>${it.affixes.map(a => Loot.affixLine(a)).join('・')}</span></div>`).join('');
+      `<span>［${it.slotLabel || '？'}］${it.affixes.map(a => Loot.affixLine(a)).join('・')}</span></div>`).join('');
+  }
+
+  // 通關才入庫（v0.3.0：淪陷＝這局的戰利品蒸發）。局外裝備庫 UI 等等接，先埋 localStorage 底
+  function bankStash(win) {
+    if (!win || !gear.length) return;
+    try {
+      const id = localStorage.getItem('kkpark_discord_id') || 'guest';
+      const key = 'kkpark_survivor_stash_' + id;
+      const stash = JSON.parse(localStorage.getItem(key) || '[]');
+      for (const it of gear) {
+        stash.push({ name: it.name, slot: it.slot, slotLabel: it.slotLabel,
+                     rarity: it.rarity.id, affixes: it.affixes });
+      }
+      while (stash.length > 60) stash.shift();   // 上限防爆
+      localStorage.setItem(key, JSON.stringify(stash));
+    } catch (e) {}
   }
 
   // ===== 結局 =====
@@ -449,8 +465,12 @@
       `<span>存活 <b>${mins}</b></span><span>等級 <b>Lv.${S.level}</b></span><span>擊殺 <b>${S.kills}</b></span>` +
       `<span>波次 <b>${Math.min(Mobs.wave + 1, BAL.waveToWin)}</b>/${BAL.waveToWin}</span><span>核心 <b>${Math.round(CORE.hp)}</b></span>`;
     const topGear = gear.slice(-3).reverse();
+    bankStash(win);
     $('goGear').innerHTML = topGear.length
-      ? '戰利品：' + topGear.map(it => `<b style="color:${it.rarity.color}">${it.name}</b>`).join('、')
+      ? (win
+        ? `戰利品 ${gear.length} 件已入庫：`
+        : '戰利品蒸發了——守住園區才能帶回：')
+        + topGear.map(it => `<b style="color:${it.rarity.color}">${it.name}</b>`).join('、')
       : '（沒撿到裝備）';
     const shareTxt = `🏴 KK 園區守塔｜${win ? '守住園區' : '園區淪陷'}・存活 ${mins}・Lv.${S.level}・擊殺 ${S.kills}\n來守一波：${DC_INVITE}`;
     $('btnShare').onclick = () => {

@@ -1,7 +1,7 @@
 'use strict';
 /* data.js — 倖存者數值表：怪、波次、詞綴、技能、升級選項。全部純資料，行為在別的檔 */
 
-const GAME_VERSION = 'v0.2.2';
+const GAME_VERSION = 'v0.3.0';
 
 // DC 群導流（跟 kkpark-map 同一條無限期邀請）
 const DC_INVITE = 'https://discord.gg/BTggYYFVf8';
@@ -50,8 +50,25 @@ const RARITY = [
   { id: 'magic',  name: '魔物', color: '#7fb3ff', w: 30, affixes: 2 },
   { id: 'rare',   name: '稀有', color: '#ffd35c', w: 8,  affixes: 4 },
 ];
-// 裝備底名（前綴+底+後綴 = 「殘暴的西裝外套之輕功」）
-const BASES = ['西裝外套', '便服', '制服', '夾克', '長袍'];
+
+// ===== 裝備槽位（v0.3.0 七槽，跟紙娃娃對齊）=====
+// affixW：詞綴加權（非硬鎖——任何槽都可能出任何詞，只是機率偏）
+const GEAR_SLOTS = [
+  { id: 'hat',    label: '頭',   bases: ['鴨舌帽', '巡查帽', '鐵盔'],
+    affixW: { hp: 3 } },
+  { id: 'top',    label: '衣',   bases: ['西裝外套', '便服', '制服', '夾克', '長袍'],
+    affixW: { dmg: 3, aspd: 3, bullet: 2, pierce: 2 } },
+  { id: 'bottom', label: '褲',   bases: ['工作褲', '西裝褲', '慢跑褲'],
+    affixW: { mspd: 3, hp: 2 } },
+  { id: 'shoes',  label: '鞋',   bases: ['布鞋', '皮鞋', '慢跑鞋'],
+    affixW: { mspd: 3, magnet: 3 } },
+  { id: 'face',   label: '臉',   bases: ['眼鏡', '墨鏡', '安全帽面罩'],
+    affixW: { bullet: 2, pierce: 2, aspd: 1 } },
+  { id: 'neck',   label: '頸',   bases: ['手錶', '項鍊', '耳環'],
+    affixW: { magnet: 3, xp: 3 } },
+  { id: 'cape',   label: '披風', bases: ['短披風', '毛圍巾', '巡邏斗篷'],
+    affixW: { xp: 2, hp: 2, pierce: 2 } },
+];
 
 function fmtPct(v) { return `+${v}%`; }
 
