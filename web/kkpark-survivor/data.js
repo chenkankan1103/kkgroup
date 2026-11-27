@@ -1,7 +1,7 @@
 'use strict';
 /* data.js — 倖存者數值表：怪、波次、詞綴、技能、升級選項。全部純資料，行為在別的檔 */
 
-const GAME_VERSION = 'v0.3.1';
+const GAME_VERSION = 'v0.3.2';
 
 // DC 群導流（跟 kkpark-map 同一條無限期邀請）
 const DC_INVITE = 'https://discord.gg/BTggYYFVf8';
@@ -14,20 +14,21 @@ const API_BASE = 'https://kkgroup2026.duckdns.org';
 // v0.2.0：怪物改穿「巡查員制服」後，hue-rotate 會洗掉制服原色（深藍變青）→ 全部改 0，
 // 改用「配件色」區分怪種（accessory 槽位只染配件不染全身），靠外型本身辨識。
 const MOB_TYPES = {
-  rusher: { name: '巡查員', hue: 0, speed: 52, hp: 18,  dmg: 8,  xp: 1,  r: 14 },
-  swarm:  { name: '便衣',   hue: 0, speed: 78, hp: 10,  dmg: 5,  xp: 1,  r: 12 },
-  gunner: { name: '槍手',   hue: 0, speed: 34, hp: 26,  dmg: 10, xp: 3,  r: 14, ranged: true, range: 240, fireCd: 2.2, bulletSpeed: 170 },
+  rusher: { name: '巡查員', hue: 0, speed: 62, hp: 20,  dmg: 8,  xp: 1,  r: 14 },
+  swarm:  { name: '便衣',   hue: 0, speed: 92, hp: 12,  dmg: 5,  xp: 1,  r: 12 },
+  gunner: { name: '槍手',   hue: 0, speed: 40, hp: 28,  dmg: 10, xp: 3,  r: 14, ranged: true, range: 240, fireCd: 2.0, bulletSpeed: 180 },
 };
 
-// 波次：30 秒一群，強度遞增。spawn/s、hp 倍率、怪種權重
+// 波次：30 秒一群，強度遞增。v0.3.2 合圍版調校——通道繞路＋塔樓守門讓防線變強，
+// 生成量/怪速/hp 曲線同步加壓（否則核心全程滿血零壓力）
 const WAVE = {
   stepSec: 30,
-  spawnPerSec: t => 1.1 + t / 18,        // 每秒生成數（t=波次指數）
-  hpMult: t => 1 + t * 0.22 + t * t * 0.03,
-  weights: t => (t < 2 ? { rusher: 1, swarm: 0.4, gunner: 0 } :
-                  t < 4 ? { rusher: 1, swarm: 0.8, gunner: 0.25 } :
-                          { rusher: 1, swarm: 1.1, gunner: 0.45 }),
-  eliteEvery: 5,                          // 每 5 群一隻精英（hp×10、大隻、必掉黃裝）
+  spawnPerSec: t => 1.6 + t / 10,        // 每秒生成數（t=波次指數）
+  hpMult: t => 1 + t * 0.28 + t * t * 0.045,
+  weights: t => (t < 2 ? { rusher: 1, swarm: 0.5, gunner: 0 } :
+                  t < 4 ? { rusher: 1, swarm: 0.9, gunner: 0.3 } :
+                          { rusher: 1, swarm: 1.2, gunner: 0.55 }),
+  eliteEvery: 4,                          // 每 4 群一隻精英（hp×10、大隻、必掉黃裝）
 };
 
 // ===== POE 詞綴池（MVP：前綴+後綴各 1）=====
@@ -108,8 +109,14 @@ const BAL = {
     regen: 2,                // 每秒回血（撐住壓力，別讓一波就死）
   },
   waveToWin: 12,             // 撐過第 12 波＝守住園區（勝利）
+  // ===== 城門（v0.3.2：門＝第二道血條，怪破門才碰核心）=====
+  gate: { hp: 260, hitDmg: 8, hitCd: 0.8, regen: 4, regenDelay: 6 },  // regen：無怪貼門 6 秒後每秒回 4
   // ===== 園區設施（v0.3.1 建築群地標）=====
   // 樓房：純地標（未來障礙物）；哨塔：自動開火；工作室：站進光圈掛機賺 KK 幣（通關才入帳）
+  // ===== 園區合圍（v0.3.2：城牆＋護城河＋通道，怪只能走通道進來）=====
+  cameraZoom: 0.72,          // 視野拉後（1=原視野；越小看得越廣）
+  wall: { r: 300, lw: 10, gateAngs: [45, 165, 285], gateHalfDeg: 8 },  // gateAngs 單位=度
+  moat: { inner: 300, outer: 380 },
   buildingKkRate: 2,         // 工作室每秒 KK 幣（站立於光圈內）
   buildingKkCap: 400,        // 單局工作室收益上限
   towerRange: 420,           // 哨塔射程 px

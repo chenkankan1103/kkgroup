@@ -54,17 +54,17 @@
   }
   ['bld_a', 'bld_b', 'bld_c', 'bld_d', 'office_a'].forEach(k => loadSpr(k, 'assets/' + k + '.png'));
   const D2R = Math.PI / 180;
+  // 合圍 v0.3.2：建築收進城牆內一圈（併攏），通道口各一座塔樓
+  const GATES = BAL.wall.gateAngs.map(d => d * D2R);
   const BUILDINGS = [
-    { spr: 'bld_b', ang: 0,   r: 440, w: 190 }, { spr: 'bld_a', ang: 47,  r: 540, w: 170 },
-    { spr: 'bld_c', ang: 96,  r: 480, w: 175 }, { spr: 'bld_d', ang: 150, r: 570, w: 180 },
-    { spr: 'bld_a', ang: 200, r: 430, w: 175 }, { spr: 'bld_b', ang: 247, r: 520, w: 185 },
-    { spr: 'bld_c', ang: 295, r: 550, w: 170 }, { spr: 'bld_d', ang: 341, r: 460, w: 180 },
+    { spr: 'bld_b', ang: 5,   r: 272, w: 170 }, { spr: 'bld_a', ang: 80,  r: 275, w: 165 },
+    { spr: 'bld_c', ang: 115, r: 270, w: 170 }, { spr: 'bld_d', ang: 200, r: 274, w: 170 },
+    { spr: 'bld_b', ang: 240, r: 272, w: 168 }, { spr: 'bld_c', ang: 320, r: 275, w: 165 },
+    { spr: 'bld_d', ang: 350, r: 272, w: 170 },
   ].map(b => { const a = b.ang * D2R; return { ...b, x: Math.cos(a) * b.r, y: Math.sin(a) * b.r }; });
-  const TOWERS = [
-    { ang: 70,  r: 320 }, { ang: 250, r: 285 },
-  ].map(t => { const a = t.ang * D2R; return { ...t, x: Math.cos(a) * t.r, y: Math.sin(a) * t.r + (t.ang > 180 ? 20 : 0), cd: 0 }; });
+  const TOWERS = GATES.map(g => ({ x: Math.cos(g) * 262, y: Math.sin(g) * 262, cd: 0 }));
   const OFFICES = [
-    { spr: 'office_a', ang: 160, r: 390, w: 175 }, { spr: 'office_a', ang: 310, r: 400, w: 175 },
+    { spr: 'office_a', ang: 145, r: 280, w: 165 }, { spr: 'office_a', ang: 265, r: 280, w: 165 },
   ].map(o => { const a = o.ang * D2R; return { ...o, x: Math.cos(a) * o.r, y: Math.sin(a) * o.r, zone: 90 }; });
 
   function pushFloat(x, y, text, color) {
@@ -119,6 +119,9 @@
     bullets.length = 0; eBullets.length = 0; orbs.length = 0; floats.length = 0;
     Mobs.reset();
     Mobs.list.length = 0;
+    TOWERS.forEach(t => { t.cd = 0; });
+    OFFICES.forEach(o => { o.lastPop = 0; });
+    GATES_HP.forEach(g => { g.hp = g.max; g.quietT = 0; g.flash = 0; });
     renderGearPanel();
     $('hudBag').textContent = '🎒 0';
     recompute();
@@ -205,7 +208,8 @@
   function fireBullet() {
     const st = S.stats;
     const n = st.bullets;
-    const nearest = nearestMob(S.x, S.y, 560);
+    // 合圍 v0.3.2：射程鎖到護城河外緣（怪上橋才進入火力網；繞路段打不到＝塔樓與玩家守住門口）
+    const nearest = nearestMob(S.x, S.y, Math.min(560, BAL.moat.outer + 30));
     const baseAng = nearest ? Math.atan2(nearest.y - S.y, nearest.x - S.x) : (S.facing || 0);
     for (let i = 0; i < n; i++) {
       const spread = (i - (n - 1) / 2) * 0.14;
@@ -217,6 +221,7 @@
       b.life = 1.5;
       b.dmg = BAL.baseBulletDmg * (1 + st.dmgPct / 100);
       b.pierce = st.pierce;
+      b.owner = 'player';
       bullets.push(b);
     }
   }
@@ -322,12 +327,14 @@
       }
     }
 
-    // 我方彈
+    // 我方彈（v0.3.2：玩家彈出城牆即消失——火力網鎖牆內，門口才是殺戮區）
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.life -= dt;
       b.x += b.vx * dt; b.y += b.vy * dt;
-      let dead = b.life <= 0;
+      let dead = b.life <= 0 ||
+        (b.owner === 'player' &&
+         (b.x - CORE.x) ** 2 + (b.y - CORE.y) ** 2 > (BAL.moat.outer + 20) ** 2);
       if (!dead) {
         for (let j = Mobs.list.length - 1; j >= 0; j--) {
           const m = Mobs.list[j];
@@ -346,6 +353,10 @@
         const eb = eBulletPool.get();
         eb.x = m.x; eb.y = m.y; eb.vx = nx * sp; eb.vy = ny * sp; eb.life = 2.4;
         eBullets.push(eb);
+      },
+      (gateAng, dmg, dt) => {
+        const idx = GATES.indexOf(gateAng);
+        if (idx >= 0 && GATES_HP[idx].hp > 0) damageGate(idx, dmg, dt);
       });
 
     // 敵彈（守塔：瞄核心，命中核心扣核心血；碰到玩家也扣一點）
@@ -398,6 +409,7 @@
       b.vx = Math.cos(ang) * BAL.bulletSpeed; b.vy = Math.sin(ang) * BAL.bulletSpeed;
       b.life = BAL.towerRange / BAL.bulletSpeed + 0.1;
       b.dmg = BAL.towerDmg; b.pierce = 0;
+      b.owner = 'tower';
       bullets.push(b);
     }
 
@@ -411,6 +423,19 @@
             o.lastPop = S.kk | 0;
             pushFloat(o.x, o.y - 90, '+' + (o.lastPop % 10 === 0 ? o.lastPop : '') || '', '#ffd35c');
           }
+        }
+      }
+    }
+
+    // 城門回血：門前安靜 6 秒後每秒回 4
+    for (let i = 0; i < GATES_HP.length; i++) {
+      const g = GATES_HP[i];
+      if (g.flash > 0) g.flash -= dt;
+      if (g.hp < g.max && g.hp > 0) {
+        g.quietT += dt;
+        if (g.quietT >= BAL.gate.regenDelay) {
+          g.hp = Math.min(g.max, g.hp + BAL.gate.regen * dt);
+          for (const m of Mobs.list) if (m.gate === GATES[i] && m.gateBroken && g.hp >= g.max * 0.999) m.gateBroken = false;
         }
       }
     }
@@ -549,9 +574,13 @@
   // ===== 渲染 =====
   function render(dt) {
     const cam = { x: CORE.x, y: CORE.y };   // 鏡頭跟核心（玩家在核心周圍）
-    Engine.begin(cam);
+    Engine.begin(cam, BAL.cameraZoom);
     Engine.drawGround(cam, BAL.core.radius);
     const ctx = Engine.ctx;
+    drawMoat(ctx);
+    drawBridges(ctx);
+    drawWall(ctx);
+    drawGateBars(ctx);
     drawCore(ctx);
     // 工作室光圈（地面標記，站進去賺幣）
     for (const o of OFFICES) {
@@ -686,6 +715,121 @@
     pickLevel(i) { applyLevelChoice(i); },
   };
 
+  // 護城河：城牆外一圈深水環（視覺；怪只從橋＝通道過）
+  function drawMoat(ctx) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CORE.x, CORE.y, BAL.moat.outer, 0, Math.PI * 2);
+    ctx.arc(CORE.x, CORE.y, BAL.moat.inner, 0, Math.PI * 2, true);
+    ctx.fillStyle = 'rgba(36,58,92,0.6)';
+    ctx.fill('evenodd');
+    // 水面微光
+    ctx.strokeStyle = 'rgba(90,140,200,0.18)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(CORE.x, CORE.y, (BAL.moat.inner + BAL.moat.outer) / 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 通道橋：護城河上的木橋（怪與視覺的過河點）
+  function drawBridges(ctx) {
+    ctx.save();
+    ctx.fillStyle = '#5a4a38';
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 2;
+    for (const g of GATES) {
+      ctx.save();
+      ctx.translate(CORE.x + Math.cos(g) * (BAL.moat.inner + BAL.moat.outer) / 2,
+                    CORE.y + Math.sin(g) * (BAL.moat.inner + BAL.moat.outer) / 2);
+      ctx.rotate(g + Math.PI / 2);
+      ctx.fillRect(-18, -62, 36, 124);
+      ctx.strokeRect(-18, -62, 36, 124);
+      // 橋板紋
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      for (let i = -2; i <= 2; i++) ctx.fillRect(-18, i * 22 - 2, 36, 3);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // 城牆：城門之間的石牆弧段（門口留缺）——v0.3.2 加深加寬＋垛口，讀得出是牆
+  function drawWall(ctx) {
+    const gs = [...GATES].sort((a, b) => a - b);
+    const half = BAL.wall.gateHalfDeg * D2R;
+    ctx.save();
+    ctx.lineCap = 'butt';
+    // 牆身（深石色，寬）
+    ctx.lineWidth = BAL.wall.lw + 6;
+    ctx.strokeStyle = '#31363e';
+    for (let i = 0; i < gs.length; i++) {
+      const a0 = gs[i] + half;
+      const a1 = (i === gs.length - 1 ? gs[0] + Math.PI * 2 : gs[i + 1]) - half;
+      ctx.beginPath();
+      ctx.arc(CORE.x, CORE.y, BAL.wall.r, a0, a1);
+      ctx.stroke();
+    }
+    // 牆頂亮面（灰石）
+    ctx.lineWidth = BAL.wall.lw - 4;
+    ctx.strokeStyle = '#585f6a';
+    for (let i = 0; i < gs.length; i++) {
+      const a0 = gs[i] + half;
+      const a1 = (i === gs.length - 1 ? gs[0] + Math.PI * 2 : gs[i + 1]) - half;
+      ctx.beginPath();
+      ctx.arc(CORE.x, CORE.y, BAL.wall.r, a0, a1);
+      ctx.stroke();
+    }
+    // 垛口（牆外緣等距短刻）
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#6a7280';
+    const crenel = 0.02;
+    for (let i = 0; i < gs.length; i++) {
+      const a0 = gs[i] + half;
+      const a1 = (i === gs.length - 1 ? gs[0] + Math.PI * 2 : gs[i + 1]) - half;
+      for (let a = a0; a < a1; a += crenel * 2) {
+        ctx.beginPath();
+        ctx.arc(CORE.x, CORE.y, BAL.wall.r + BAL.wall.lw / 2 - 1, a, a + crenel);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // 城門柵欄：畫在橋的外緣（牆外，不被塔樓蓋住）＋血條（門破＝只剩斷框）
+  function drawGateBars(ctx) {
+    for (let i = 0; i < GATES.length; i++) {
+      const g = GATES[i], st = GATES_HP[i];
+      const x = CORE.x + Math.cos(g) * (BAL.moat.outer + 8), y = CORE.y + Math.sin(g) * (BAL.moat.outer + 8);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(g + Math.PI / 2);
+      if (st.hp > 0) {
+        ctx.fillStyle = st.flash > 0 ? '#a06a4a' : '#6a563e';
+        ctx.fillRect(-30, -8, 60, 16);
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+        ctx.strokeRect(-30, -8, 60, 16);
+        // 柵條紋
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        for (let k = -2; k <= 2; k++) ctx.fillRect(k * 11 - 1.5, -8, 3, 16);
+      } else {
+        // 門破：兩側斷框
+        ctx.fillStyle = 'rgba(106,86,62,0.55)';
+        ctx.fillRect(-34, -8, 9, 16);
+        ctx.fillRect(25, -8, 9, 16);
+      }
+      ctx.restore();
+      // 門血條（受損才畫）
+      if (st.hp < st.max && st.hp > 0) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(x - 30, y - 26, 60, 6);
+        ctx.fillStyle = st.hp / st.max > 0.4 ? '#e0b14c' : '#e05a47';
+        ctx.fillRect(x - 29, y - 25, 58 * (st.hp / st.max), 4);
+        ctx.restore();
+      }
+    }
+  }
+
   // 哨塔：程序化繪製——混凝土塔身＋頂部哨亭＋橙色頂蓋（開火時砲口亮一下）
   function drawTower(ctx, t) {
     const R = 46;                       // 塔身半寬
@@ -720,6 +864,20 @@
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+  }
+
+  // 城門血條（v0.3.2 合圍緩衝）：怪撞門先扣門血，門破才碰得到核心——單門失守有補救窗口
+  const GATES_HP = GATES.map(() => ({ hp: BAL.gate.hp, max: BAL.gate.hp, quietT: 0, flash: 0 }));
+  function damageGate(angIdx, dmg, dt) {
+    const g = GATES_HP[angIdx];
+    g.hp = Math.max(0, g.hp - dmg * dt / BAL.gate.hitCd);
+    g.flash = 0.25;
+    g.quietT = 0;
+    if (g.hp <= 0) {
+      pushFloat(Math.cos(GATES[angIdx]) * BAL.wall.r, Math.sin(GATES[angIdx]) * BAL.wall.r - 40, '城門被突破了！', '#ff6b6b');
+      // 門破：廣播該門的怪繼續走
+      for (const m of Mobs.list) if (m.gate === GATES[angIdx]) m.gateBroken = true;
+    }
   }
 
   // 園區核心：外圈防護光環＋中央建築（純 Canvas 畫，無外部資產）

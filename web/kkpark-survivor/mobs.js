@@ -43,9 +43,15 @@ const Mobs = (() => {
   // 怪池（零配置）
   const pool = Engine.makePool(
     () => ({ x: 0, y: 0, vx: 0, vy: 0, hp: 0, maxHp: 0, type: null, elite: false, t: 0, fireT: 0, scale: 1 }),
-    (o) => { o.t = 0; o.fireT = 0; o.elite = false; o.scale = 1; }
+    (o) => { o.t = 0; o.fireT = 0; o.elite = false; o.scale = 1; o.gate = 0; o.inGate = false; o.gateBroken = false; o.banging = false; }
   );
   const list = [];
+
+  const GATE_RADS = BAL.wall.gateAngs.map(d => d * Math.PI / 180);
+  function angDiff(a, b) {
+    let d = Math.abs(a - b) % (Math.PI * 2);
+    return d > Math.PI ? Math.PI * 2 - d : d;
+  }
 
   function spawn(t, elite, px, py) {
     const d = MOB_TYPES[t];
@@ -55,20 +61,24 @@ const Mobs = (() => {
     m.maxHp = Math.round(d.hp * WAVE.hpMult(waveIdx()) * (elite ? 10 : 1));
     m.hp = m.maxHp;
     m.scale = elite ? 1.8 : 1;
-    // 守塔模式：環繞核心外圈生成（畫面外）
+    // 守塔模式：環繞核心外圈生成（zoom 感知，確保在畫面外）
     const ang = Math.random() * Math.PI * 2;
-    const R = Math.max(Engine.W, Engine.H) * 0.62 + 40;
+    const R = (Math.max(Engine.W, Engine.H) / 2) / Engine.zoom + 80;
     m.x = CORE.x + Math.cos(ang) * R;
     m.y = CORE.y + Math.sin(ang) * R;
     m.vx = 0; m.vy = 0;
     m.fx = 1;
+    // 合圍：指派最近通道（生成角最近的門），進門前先繞到橋頭
+    m.gate = GATE_RADS[0]; let bd = 9;
+    for (const g of GATE_RADS) { const dd = angDiff(ang, g); if (dd < bd) { bd = dd; m.gate = g; } }
+    m.inGate = false;
     list.push(m);
   }
 
   let wave = 0, waveT = 0, spawnAcc = 0, eliteDue = false;
   function waveIdx() { return wave; }
 
-  function update(dt, S, onDeath, onShoot) {
+  function update(dt, S, onDeath, onShoot, onGateHit) {
     waveT += dt;
     if (waveT >= WAVE.stepSec) { waveT = 0; wave++; if (wave % WAVE.eliteEvery === 0) eliteDue = true; }
     // 生成（上限 240 隻防爆：卡機時少生成而非崩）
@@ -83,7 +93,7 @@ const Mobs = (() => {
     if (eliteDue && list.length < 240) { eliteDue = false; spawn('rusher', true, S.x, S.y); }
     else eliteDue = false;
 
-    // 移動＆敵彈（守塔模式：怪瞄核心 0,0，不是瞄玩家）
+    // 移動＆敵彈（合圍：未進通道先繞到指派通道的橋頭，進了才直奔核心）
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i];
       m.t += dt;
@@ -91,16 +101,40 @@ const Mobs = (() => {
       const sp = d.speed * (m.elite ? 0.8 : 1);
       const dx = CORE.x - m.x, dy = CORE.y - m.y;
       const dist = Math.hypot(dx, dy) || 1;
+      if (!m.inGate) {
+        const ma = Math.atan2(m.y - CORE.y, m.x - CORE.x);
+        // 進門條件：已過牆，或已對齊通道且抵達橋頭（橋頭在 moat.outer+30=410，門檻放 430）
+        if (dist < BAL.wall.r || (angDiff(ma, m.gate) < 0.14 && dist < 430)) m.inGate = true;
+      }
+      // 撞城門判定：進門段且貼近牆半徑、門還沒破 → 掛 banging（onGateHit 由 main 扣門血）
+      m.banging = false;
+      if (m.inGate && !m.gateBroken && dist < BAL.wall.r + 16 && angDiff(Math.atan2(m.y - CORE.y, m.x - CORE.x), m.gate) < 0.2) {
+        m.banging = true;
+        if (onGateHit) onGateHit(m.gate, d.dmg * (m.elite ? 1.8 : 1), dt);
+      }
       if (Math.abs(dx) > 6) m.fx = dx > 0 ? 1 : -1;   // 面向核心側（渲染翻面用）
-      if (d.ranged && dist < d.range * 0.7) {
-        // 保持距離橫移（仍瞄核心）
-        m.x += (-dy / dist) * sp * 0.6 * dt;
-        m.y += (dx / dist) * sp * 0.6 * dt;
+      let dirx = dx / dist, diry = dy / dist;
+      if (!m.inGate) {
+        // 朝指派通道的橋頭點（牆外緣）走——位置向量，不是固定方向，不然永遠飄不進門
+        const bx = CORE.x + Math.cos(m.gate) * (BAL.moat.outer + 30);
+        const by = CORE.y + Math.sin(m.gate) * (BAL.moat.outer + 30);
+        const bdx = bx - m.x, bdy = by - m.y;
+        const bd = Math.hypot(bdx, bdy) || 1;
+        dirx = bdx / bd; diry = bdy / bd;
+      }
+      if (d.ranged && m.inGate && dist < d.range * 0.7) {
+        // 保持距離橫移（已進門才發生）
+        m.x += (-diry) * sp * 0.6 * dt;
+        m.y += dirx * sp * 0.6 * dt;
         m.fireT += dt;
-        if (m.fireT >= d.fireCd) { m.fireT = 0; onShoot(m, dx / dist, dy / dist, d.bulletSpeed); }
+        if (m.fireT >= d.fireCd) { m.fireT = 0; onShoot(m, dirx, diry, d.bulletSpeed); }
+      } else if (m.inGate && m.banging) {
+        // 撞城門：門血扣完（門破）才繼續往核心走
+        m.x += dirx * sp * 0.15 * dt;   // 門還在＝擠在門口推擠微動
+        m.y += diry * sp * 0.15 * dt;
       } else {
-        m.x += (dx / dist) * sp * dt;
-        m.y += (dy / dist) * sp * dt;
+        m.x += dirx * sp * dt;
+        m.y += diry * sp * dt;
       }
     }
   }

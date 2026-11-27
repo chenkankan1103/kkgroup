@@ -38,24 +38,28 @@ const Engine = (() => {
     cv.style.width = W + 'px'; cv.style.height = H + 'px';
   }
 
-  // 每幀開頭：世界座標跟著玩家（鏡頭），transform 一次
-  function begin(cam) {
+  // 每幀開頭：世界座標跟著鏡頭＋可選縮放（v0.3.2 視野拉後），transform 一次
+  let curZoom = 1;
+  function begin(cam, zoom) {
+    curZoom = zoom || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#101418';
     ctx.fillRect(0, 0, W, H);
     ctx.save();
-    ctx.translate(W / 2 - cam.x, H / 2 - cam.y);
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(curZoom, curZoom);
+    ctx.translate(-cam.x, -cam.y);
   }
   function end() { ctx.restore(); }
 
-  // 地板網格（程序化，無圖片）：只畫可視範圍
+  // 地板網格（程序化，無圖片）：只畫可視範圍（zoom 感知）
   function drawGrid(cam) {
-    const g = 96;
-    const x0 = Math.floor((cam.x - W / 2) / g) * g, y0 = Math.floor((cam.y - H / 2) / g) * g;
+    const g = 96, vw = W / curZoom, vh = H / curZoom;
+    const x0 = Math.floor((cam.x - vw / 2) / g) * g, y0 = Math.floor((cam.y - vh / 2) / g) * g;
     ctx.strokeStyle = 'rgba(255,255,255,0.045)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    const x1 = cam.x + W / 2 + g, y1 = cam.y + H / 2 + g;
+    const x1 = cam.x + vw / 2 + g, y1 = cam.y + vh / 2 + g;
     for (let x = x0; x < x1; x += g) { ctx.moveTo(x, y0); ctx.lineTo(x, y1); }
     for (let y = y0; y < y1; y += g) { ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
     ctx.stroke();
@@ -81,9 +85,10 @@ const Engine = (() => {
   function drawGround(cam, coreR) {
     if (!tex.ground) { drawGrid(cam); return; }
     const TS = 256 * TEX_SCALE;
-    const x0 = Math.floor((cam.x - W / 2) / TS) * TS, y0 = Math.floor((cam.y - H / 2) / TS) * TS;
-    for (let gx = x0; gx < cam.x + W / 2; gx += TS) {
-      for (let gy = y0; gy < cam.y + H / 2; gy += TS) {
+    const vw = W / curZoom, vh = H / curZoom;
+    const x0 = Math.floor((cam.x - vw / 2) / TS) * TS, y0 = Math.floor((cam.y - vh / 2) / TS) * TS;
+    for (let gx = x0; gx < cam.x + vw / 2; gx += TS) {
+      for (let gy = y0; gy < cam.y + vh / 2; gy += TS) {
         const fx = ((Math.round(gx / TS) % 2) + 2) % 2 === 1;
         const fy = ((Math.round(gy / TS) % 2) + 2) % 2 === 1;
         ctx.save();
@@ -116,5 +121,6 @@ const Engine = (() => {
   }
 
   return { init, begin, end, drawGrid, drawGround, loadTextures, fpsTick, makePool,
-    get ctx() { return ctx; }, get W() { return W; }, get H() { return H; }, get Q() { return Q; } };
+    get ctx() { return ctx; }, get W() { return W; }, get H() { return H; }, get Q() { return Q; },
+    get zoom() { return curZoom; } };
 })();
