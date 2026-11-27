@@ -15,6 +15,7 @@
     fireT: 0, ringAng: 0, lanceT: 0,
     invT: 0,                // 受擊無敵
     xp: 0, level: 1, kills: 0, time: 0,
+    kk: 0,                  // 本局工作室收益（通關才入帳）
     look: null, doll: null, // 紙娃娃
   };
 
@@ -42,6 +43,29 @@
   const txtPool = Engine.makePool(() => ({ x: 0, y: 0, vy: 0, life: 0, text: '', color: '' }), () => {});
   const floats = [];       // 傷害飄字
   const ringDmgT = new Map();
+
+  // ===== 園區建築群（v0.3.1：程序化 b3 變體，環帶外地標）=====
+  // 樓房=地標；哨塔=自動開火；工作室=站光圈掛機賺 KK 幣（通關才入帳，淪陷蒸發）
+  const SPR = {};          // 圖檔非同步載入
+  function loadSpr(key, url) {
+    const im = new Image();
+    im.onload = () => { SPR[key] = im; };
+    im.src = url;
+  }
+  ['bld_a', 'bld_b', 'bld_c', 'bld_d', 'office_a'].forEach(k => loadSpr(k, 'assets/' + k + '.png'));
+  const D2R = Math.PI / 180;
+  const BUILDINGS = [
+    { spr: 'bld_b', ang: 0,   r: 440, w: 190 }, { spr: 'bld_a', ang: 47,  r: 540, w: 170 },
+    { spr: 'bld_c', ang: 96,  r: 480, w: 175 }, { spr: 'bld_d', ang: 150, r: 570, w: 180 },
+    { spr: 'bld_a', ang: 200, r: 430, w: 175 }, { spr: 'bld_b', ang: 247, r: 520, w: 185 },
+    { spr: 'bld_c', ang: 295, r: 550, w: 170 }, { spr: 'bld_d', ang: 341, r: 460, w: 180 },
+  ].map(b => { const a = b.ang * D2R; return { ...b, x: Math.cos(a) * b.r, y: Math.sin(a) * b.r }; });
+  const TOWERS = [
+    { ang: 70,  r: 320 }, { ang: 250, r: 285 },
+  ].map(t => { const a = t.ang * D2R; return { ...t, x: Math.cos(a) * t.r, y: Math.sin(a) * t.r + (t.ang > 180 ? 20 : 0), cd: 0 }; });
+  const OFFICES = [
+    { spr: 'office_a', ang: 160, r: 390, w: 175 }, { spr: 'office_a', ang: 310, r: 400, w: 175 },
+  ].map(o => { const a = o.ang * D2R; return { ...o, x: Math.cos(a) * o.r, y: Math.sin(a) * o.r, zone: 90 }; });
 
   function pushFloat(x, y, text, color) {
     if (floats.length > 80) return;           // 上限防爆
@@ -86,6 +110,7 @@
     // 重置
     S.phase = 'playing';
     S.x = 0; S.y = 180; S.invT = 0; S.xp = 0; S.level = 1; S.kills = 0; S.time = 0;
+    S.kk = 0;
     S.skills = { bullet: { lvl: 1 } };
     S.win = false;
     CORE.hp = CORE.maxHp = BAL.core.hp;
@@ -360,6 +385,36 @@
     }
     if (S.invT > 0) S.invT -= dt;
 
+    // 哨塔自動開火（園區防衛，傷害固定不隨詞綴）
+    for (const t of TOWERS) {
+      t.cd -= dt;
+      if (t.cd > 0) continue;
+      const m = nearestMob(t.x, t.y, BAL.towerRange);
+      if (!m) continue;
+      t.cd = BAL.towerCd;
+      const ang = Math.atan2(m.y - t.y, m.x - t.x);
+      const b = bulletPool.get();
+      b.x = t.x; b.y = t.y - 40;
+      b.vx = Math.cos(ang) * BAL.bulletSpeed; b.vy = Math.sin(ang) * BAL.bulletSpeed;
+      b.life = BAL.towerRange / BAL.bulletSpeed + 0.1;
+      b.dmg = BAL.towerDmg; b.pierce = 0;
+      bullets.push(b);
+    }
+
+    // 工作室：站進光圈掛機賺 KK 幣（單局上限；通關入帳、淪陷蒸發）
+    for (const o of OFFICES) {
+      if ((S.x - o.x) ** 2 + (S.y - o.y) ** 2 < o.zone * o.zone) {
+        const gain = Math.min(BAL.buildingKkCap - S.kk, BAL.buildingKkRate * dt);
+        if (gain > 0) {
+          S.kk += gain;
+          if ((S.kk | 0) > (o.lastPop | 0)) {
+            o.lastPop = S.kk | 0;
+            pushFloat(o.x, o.y - 90, '+' + (o.lastPop % 10 === 0 ? o.lastPop : '') || '', '#ffd35c');
+          }
+        }
+      }
+    }
+
     // 撿物
     const mag = st.magnet;
     for (let i = orbs.length - 1; i >= 0; i--) {
@@ -393,6 +448,7 @@
     $('hudTime').textContent = fmtTime(S.time);
     $('hudLevel').textContent = 'Lv.' + S.level;
     $('hudKills').textContent = S.kills;
+    $('hudKk').textContent = '💰 ' + (S.kk | 0);
     $('hudWave').textContent = '第 ' + Math.min(Mobs.wave + 1, BAL.waveToWin) + '/' + BAL.waveToWin + ' 波';
     // 核心血條
     const corePct = Math.max(0, Math.min(100, CORE.hp / CORE.maxHp * 100));
@@ -463,7 +519,8 @@
     $('goTitle').textContent = win ? '園區守住了！' : '園區淪陷';
     $('goStats').innerHTML =
       `<span>存活 <b>${mins}</b></span><span>等級 <b>Lv.${S.level}</b></span><span>擊殺 <b>${S.kills}</b></span>` +
-      `<span>波次 <b>${Math.min(Mobs.wave + 1, BAL.waveToWin)}</b>/${BAL.waveToWin}</span><span>核心 <b>${Math.round(CORE.hp)}</b></span>`;
+      `<span>波次 <b>${Math.min(Mobs.wave + 1, BAL.waveToWin)}</b>/${BAL.waveToWin}</span><span>核心 <b>${Math.round(CORE.hp)}</b></span>` +
+      `<span>工作室 <b>${win ? '+' + (S.kk | 0) + ' 已記入' : (S.kk | 0) + ' 蒸發'}</b></span>`;
     const topGear = gear.slice(-3).reverse();
     bankStash(win);
     $('goGear').innerHTML = topGear.length
@@ -496,6 +553,31 @@
     Engine.drawGround(cam, BAL.core.radius);
     const ctx = Engine.ctx;
     drawCore(ctx);
+    // 工作室光圈（地面標記，站進去賺幣）
+    for (const o of OFFICES) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,211,92,0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      ctx.lineDashOffset = -(performance.now() / 90) % 16;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, o.zone, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255,211,92,0.06)';
+      ctx.fill();
+      ctx.restore();
+    }
+    // 建築群＋工作室（依 y 排序畫，近的蓋遠的）
+    const draws = [...BUILDINGS, ...OFFICES].sort((a, b) => a.y - b.y);
+    for (const b of draws) {
+      const img = SPR[b.spr];
+      if (!img) continue;
+      const w = b.w, h = w;
+      ctx.drawImage(img, b.x - w / 2, b.y - h * 0.62, w, h);
+    }
+    // 哨塔：純 Canvas 畫（素材去背救不動，程序化畫最乾淨）
+    for (const t of TOWERS) drawTower(ctx, t);
     // 掉落物＋光柱
     for (const o of orbs) {
       if (o.kind === 'xp') {
@@ -598,10 +680,47 @@
     get mobDolls() { return Mobs.dolls; },
     get keys() { return keys; },
     get orbCount() { return orbs.length; },
+    get kk() { return S.kk | 0; },
     debugStart: startGame,
     debugTick(dt, n) { for (let i = 0; i < n && S.phase === 'playing'; i++) step(dt); },
     pickLevel(i) { applyLevelChoice(i); },
   };
+
+  // 哨塔：程序化繪製——混凝土塔身＋頂部哨亭＋橙色頂蓋（開火時砲口亮一下）
+  function drawTower(ctx, t) {
+    const R = 46;                       // 塔身半寬
+    // 塔身（梯形，上窄下寬）
+    ctx.save();
+    ctx.fillStyle = '#3a4048';
+    ctx.strokeStyle = 'rgba(150,170,190,0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(t.x - R * 0.62, t.y - 86);
+    ctx.lineTo(t.x + R * 0.62, t.y - 86);
+    ctx.lineTo(t.x + R, t.y + 6);
+    ctx.lineTo(t.x - R, t.y + 6);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // 窗格
+    ctx.fillStyle = 'rgba(255,211,92,0.5)';
+    for (let i = 0; i < 3; i++) ctx.fillRect(t.x - 5, t.y - 74 + i * 24, 10, 8);
+    // 哨亭
+    const hot = t.cd > BAL.towerCd - 0.25;   // 剛開火＝亮
+    ctx.fillStyle = '#2c323a';
+    ctx.strokeStyle = 'rgba(150,170,190,0.7)';
+    ctx.beginPath();
+    ctx.rect(t.x - R * 0.75, t.y - 116, R * 1.5, 30);
+    ctx.fill(); ctx.stroke();
+    // 頂蓋（橙紅，跟樓房屋頂同色系）
+    ctx.fillStyle = hot ? '#ffd35c' : '#d06a3c';
+    ctx.beginPath();
+    ctx.moveTo(t.x - R * 0.9, t.y - 116);
+    ctx.lineTo(t.x, t.y - 138);
+    ctx.lineTo(t.x + R * 0.9, t.y - 116);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 
   // 園區核心：外圈防護光環＋中央建築（純 Canvas 畫，無外部資產）
   function drawCore(ctx) {

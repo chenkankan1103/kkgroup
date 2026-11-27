@@ -1,7 +1,7 @@
 'use strict';
 /* data.js — 倖存者數值表：怪、波次、詞綴、技能、升級選項。全部純資料，行為在別的檔 */
 
-const GAME_VERSION = 'v0.3.0';
+const GAME_VERSION = 'v0.3.1';
 
 // DC 群導流（跟 kkpark-map 同一條無限期邀請）
 const DC_INVITE = 'https://discord.gg/BTggYYFVf8';
@@ -108,4 +108,11 @@ const BAL = {
     regen: 2,                // 每秒回血（撐住壓力，別讓一波就死）
   },
   waveToWin: 12,             // 撐過第 12 波＝守住園區（勝利）
+  // ===== 園區設施（v0.3.1 建築群地標）=====
+  // 樓房：純地標（未來障礙物）；哨塔：自動開火；工作室：站進光圈掛機賺 KK 幣（通關才入帳）
+  buildingKkRate: 2,         // 工作室每秒 KK 幣（站立於光圈內）
+  buildingKkCap: 400,        // 單局工作室收益上限
+  towerRange: 420,           // 哨塔射程 px
+  towerCd: 2.0,              // 哨塔開火間隔秒
+  towerDmg: 8,               // 哨塔單發傷害（不隨玩家詞綴成長）
 };
